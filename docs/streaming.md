@@ -79,12 +79,18 @@ PCM16 и дальше провайдеру.
 Провайдеру нужен сервер: ключ API не должен попадать в браузер. Сервер в
 репозитории не тянет зависимостей — Node 22 умеет `fetch` и `WebSocket` сам.
 
-```bash
-set LIVEAVATAR_API_KEY=ключ-провайдера
-set ELEVENLABS_API_KEY=ключ-синтеза
-set ELEVENLABS_VOICE_ID=id-голоса-по-умолчанию
+PowerShell:
+
+```powershell
+$env:LIVEAVATAR_API_KEY = 'ключ-провайдера'
+$env:ELEVENLABS_API_KEY = 'ключ-синтеза'
+$env:ELEVENLABS_VOICE_ID = 'id-голоса-по-умолчанию'
 node server/live-server.mjs
 ```
+
+cmd.exe — `set LIVEAVATAR_API_KEY=...`, bash — `export LIVEAVATAR_API_KEY=...`.
+Переменные живут только в текущем окне; чтобы не вводить их каждый раз,
+пропишите их в системные переменные среды.
 
 Ключи независимы: без `ELEVENLABS_API_KEY` работает режим «Мой голос», без
 `LIVEAVATAR_API_KEY` — всё, кроме провайдерского аватара.
