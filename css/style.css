@@ -1,86 +1,133 @@
 :root{
-  --bg:#0e1014; --panel:#161a21; --line:#252b35; --fg:#e7ebf0; --dim:#8b95a3;
+  --bg:#0e1014; --surface:#161a21; --raised:#1e2430; --line:#252b35;
+  --fg:#e7ebf0; --dim:#8b95a3; --faint:#6b7684;
   --accent:#6ea8fe; --accent-2:#f0a5c0; --rec:#ff5d5d;
-  --radius:10px;
+  --r:10px;
 }
 *{box-sizing:border-box}
+/* Атрибут hidden слабее любого display в правилах, а мы им прячем
+   и .row, и другие блоки с собственным display. */
+[hidden]{display:none !important}
 html,body{height:100%}
 body{
-  margin:0; display:flex; gap:0; background:var(--bg); color:var(--fg);
-  font:14px/1.45 "Segoe UI", system-ui, sans-serif;
+  margin:0; background:var(--bg); color:var(--fg);
+  font:14px/1.5 "Segoe UI", system-ui, sans-serif;
+  display:grid; grid-template-rows:auto 1fr auto; min-height:100%;
 }
-#stage{position:relative; flex:1; display:grid; place-items:center; padding:16px; min-width:0}
+
+/* ─── шапка ─── */
+#top{
+  display:flex; align-items:center; gap:16px;
+  padding:12px 20px; border-bottom:1px solid var(--line);
+}
+#top h1{margin:0; font-size:14px; font-weight:600; letter-spacing:.02em}
+#hud{margin-left:auto; display:flex; gap:6px; font:12px/1 ui-monospace, monospace}
+#hud span{background:var(--raised); color:#cfd6df; padding:6px 9px; border-radius:6px}
+#live-badge{color:#fff !important; background:var(--rec) !important; font-weight:600}
+
+/* ─── сцена ─── */
+#stage{display:grid; place-items:center; padding:20px; min-height:0}
+/* Оверлеи позиционируются по кадру, а не по всей сцене, иначе на высоком
+   окне заставка растягивается во весь экран. */
+.frame{position:relative; width:100%; max-width:min(100%, calc((100svh - 190px) * 16 / 9))}
 #out{
-  width:100%; max-width:1280px; aspect-ratio:16/9; height:auto;
-  background:#000; border-radius:var(--radius); box-shadow:0 12px 40px #0008;
+  display:block; width:100%; aspect-ratio:16/9; height:auto;
+  background:#000; border-radius:var(--r); box-shadow:0 14px 44px #0009;
 }
 #cam{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none}
 
 #boot{
-  position:absolute; inset:16px; display:grid; place-content:center; gap:14px; justify-items:center;
-  background:#0b0d11e0; border-radius:var(--radius); text-align:center; padding:24px;
+  position:absolute; inset:0; display:grid; place-content:center; justify-items:center;
+  gap:16px; text-align:center; padding:24px;
+  background:#0b0d11e6; border-radius:var(--r);
 }
-#boot[hidden]{display:none}
-#boot p{margin:0; color:var(--dim); max-width:38ch}
+#boot p{margin:0; color:var(--dim); max-width:44ch}
+.boot-actions{display:grid; gap:8px; justify-items:center}
 
-#hud{
-  position:absolute; left:28px; top:28px; display:flex; gap:8px;
-  font:12px/1 ui-monospace, monospace; color:#cfd6df;
+#toast{
+  position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+  max-width:min(80%, 60ch); padding:9px 14px; border-radius:99px;
+  background:#0b0d11e8; border:1px solid var(--line); color:var(--fg);
+  font-size:13px; text-align:center; pointer-events:none;
 }
-#hud span{background:#0b0d11b8; padding:5px 8px; border-radius:6px}
 
-#panel{
-  width:320px; flex:0 0 320px; background:var(--panel); border-left:1px solid var(--line);
-  padding:18px 18px 40px; overflow:auto;
+/* ─── тулбар ─── */
+#toolbar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:12px 20px; border-top:1px solid var(--line); background:var(--surface);
 }
-#panel h1{font-size:15px; letter-spacing:.02em; margin:0 0 18px; font-weight:600}
-section{border-top:1px solid var(--line); padding:14px 0}
-section:first-of-type{border-top:0; padding-top:0}
-label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin-bottom:8px}
-label .sub{text-transform:none; letter-spacing:0; opacity:.7}
-.row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px}
-button, select{
-  font:inherit; color:var(--fg); background:#1e2430; border:1px solid var(--line);
-  border-radius:8px; padding:8px 12px; cursor:pointer;
+#toolbar .group{display:flex; gap:6px; align-items:center}
+#toolbar .spacer{flex:1}
+
+/* ─── элементы управления ─── */
+button, select, input, textarea{
+  font:inherit; color:var(--fg); background:var(--raised);
+  border:1px solid var(--line); border-radius:8px; padding:8px 13px;
 }
+button{cursor:pointer}
 button:hover, select:hover{border-color:#3a434f}
 button:active{transform:translateY(1px)}
-select{width:100%; cursor:pointer}
-.seg{flex:1}
-.seg.on{background:var(--accent); color:#0c1017; border-color:transparent; font-weight:600}
-#rec.on{background:var(--rec); border-color:transparent; color:#fff; font-weight:600}
-.hint{margin:6px 0 0; font-size:12px; color:var(--dim)}
-.chk{display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0;
-     font-size:13px; color:var(--fg); margin:8px 0 0; cursor:pointer}
-.chk input{accent-color:var(--accent); width:15px; height:15px}
-@media (max-width:900px){
-  body{flex-direction:column}
-  #panel{width:auto; flex:none; border-left:0; border-top:1px solid var(--line)}
-}
+button:disabled{opacity:.45; cursor:not-allowed; transform:none}
+select{cursor:pointer; padding-right:8px}
+input, textarea{width:100%; padding:9px 11px}
+textarea{resize:vertical}
+input::placeholder, textarea::placeholder{color:var(--faint)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
+button.primary{background:var(--accent); color:#0c1017; border-color:transparent; font-weight:600}
+button.primary:disabled{background:var(--raised); color:var(--fg); border-color:var(--line)}
 button.ghost{background:transparent; color:var(--dim)}
 button.ghost:hover{color:var(--fg)}
-button:disabled{opacity:.45; cursor:not-allowed}
-#progress{height:6px; background:#1e2430; border-radius:99px; overflow:hidden; margin:4px 0 2px}
-#bar{height:100%; width:0; background:var(--accent); transition:width .2s linear}
-#process{flex:1; background:var(--accent); color:#0c1017; border-color:transparent; font-weight:600}
-#process:disabled{background:#1e2430; color:var(--fg); border-color:var(--line)}
-#rec-src.on{background:var(--rec); border-color:transparent; color:#fff; font-weight:600}
 
-#panel input[type=text], #panel input[type=password], #panel input:not([type]){
-  width:100%; font:inherit; color:var(--fg); background:#1e2430;
-  border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px;
-}
-#panel input::placeholder{color:#6b7684}
-#go-live{flex:1}
-#go-live.on{background:var(--rec); border-color:transparent; color:#fff; font-weight:600}
-#avatar-id{margin-bottom:8px}
-
-#panel textarea{
-  width:100%; font:inherit; color:var(--fg); background:#1e2430; resize:vertical;
-  border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px;
-}
-#panel textarea::placeholder{color:#6b7684}
+.seg.on{background:var(--accent); color:#0c1017; border-color:transparent; font-weight:600}
 .seg-voice{flex:1}
 .seg-voice.on{background:var(--accent-2); color:#1a1014; border-color:transparent; font-weight:600}
-#say{flex:1}
+#rec.on, #rec-src.on, #go-live.on{background:var(--rec); border-color:transparent; color:#fff; font-weight:600}
+
+.row{display:flex; gap:8px; flex-wrap:wrap}
+.hint{margin:8px 0 0; font-size:12.5px; color:var(--dim)}
+.hint code{background:var(--raised); padding:1px 5px; border-radius:4px; font-size:12px}
+.chk{display:flex; align-items:center; gap:9px; cursor:pointer; margin-top:8px}
+.chk input{accent-color:var(--accent); width:15px; height:15px; flex:none; padding:0}
+
+#progress{height:6px; background:var(--raised); border-radius:99px; overflow:hidden; margin-bottom:4px}
+#bar{height:100%; width:0; background:var(--accent); transition:width .2s linear}
+
+/* ─── модалки ─── */
+dialog{
+  width:min(92vw, 460px); padding:0; color:var(--fg);
+  background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  box-shadow:0 24px 70px #000b;
+}
+dialog::backdrop{background:#070910b0; backdrop-filter:blur(3px)}
+.dlg-head{
+  display:flex; align-items:center; gap:12px;
+  padding:16px 18px; border-bottom:1px solid var(--line); margin:0;
+}
+.dlg-head h2{margin:0; font-size:15px; font-weight:600}
+.dlg-head .x{
+  margin-left:auto; background:transparent; border:0; color:var(--dim);
+  font-size:15px; line-height:1; padding:6px 8px;
+}
+.dlg-head .x:hover{color:var(--fg)}
+.dlg-body{padding:6px 18px 18px; max-height:min(70vh, 560px); overflow:auto}
+.dlg-body .lead{margin:14px 0 0; color:var(--dim)}
+.dlg-body section{padding:16px 0 0; margin-top:16px; border-top:1px solid var(--line)}
+.dlg-body section:first-of-type{border-top:0}
+.dlg-body h3{
+  margin:0 0 10px; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:.09em; color:var(--dim);
+}
+.dlg-body select, .dlg-body input, .dlg-body textarea{margin-top:8px}
+.dlg-foot{padding:14px 18px; border-top:1px solid var(--line); display:flex}
+.dlg-foot button{flex:1}
+
+/* ─── узкий экран ─── */
+@media (max-width:720px){
+  #toolbar{gap:8px}
+  #toolbar .spacer{display:none}
+  #toolbar .group{flex:1 1 auto}
+  #toolbar button, #toolbar select{flex:1}
+  #stage{padding:12px}
+  .frame{max-width:100%}
+}

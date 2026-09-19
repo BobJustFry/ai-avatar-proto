@@ -64,6 +64,7 @@ async function boot() {
     $("#boot-file").onclick = () => {
       $("#boot").hidden = true;
       render(signals.v);
+      document.getElementById("dlg-video").showModal();
       $("#file").click();
     };
   } catch (err) {
@@ -275,6 +276,7 @@ async function toggleLive() {
     await whip.stop();
     btn.classList.remove("on");
     btn.textContent = "В эфир";
+    $("#live-badge").hidden = true;
     hint.textContent = "Эфир остановлен.";
     return;
   }
@@ -293,6 +295,7 @@ async function toggleLive() {
     });
     btn.classList.add("on");
     btn.textContent = "Остановить эфир";
+    $("#live-badge").hidden = false;
     hint.textContent = audioTrack ? "В эфире, со звуком." : "В эфире, без звука.";
   } catch (err) {
     console.error(err);
@@ -357,14 +360,25 @@ async function processSource() {
 
 // --- интерфейс ---------------------------------------------------------------
 
+function wireDialogs() {
+  for (const btn of document.querySelectorAll("[data-open]")) {
+    btn.onclick = () => document.getElementById(btn.dataset.open).showModal();
+  }
+  // Клик по затемнению закрывает: нативно <dialog> так не умеет.
+  for (const dlg of document.querySelectorAll("dialog")) {
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  }
+}
+
 function wireUI() {
+  wireDialogs();
   for (const btn of document.querySelectorAll(".seg")) {
     btn.onclick = () => {
       state.mode = btn.dataset.mode;
       document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("on", b === btn));
-      $("#mode-hint").textContent = state.mode === "avatar"
+      toast(state.mode === "avatar"
         ? "Мимика управляет нарисованным персонажем, человека в кадре нет."
-        : "Сегментация вырезает человека и ставит его на сгенерированный фон.";
+        : "Сегментация вырезает человека и ставит его на сгенерированный фон.");
       if (state.mode === "cutout") ensureSegmenter();
     };
   }
@@ -397,7 +411,7 @@ function wireUI() {
     if (srcRec.active) {
       const blob = await srcRec.stop();
       btn.classList.remove("on");
-      btn.textContent = "● Записать исходник";
+      btn.textContent = "● Записать с камеры";
       if (blob) await useSource(blob, "запись с камеры");
       return;
     }
@@ -418,15 +432,25 @@ function wireUI() {
       await recorder.stop();
       btn.classList.remove("on");
       btn.textContent = "● Запись";
-      $("#rec-hint").textContent = "Файл сохранён в загрузки.";
+      toast("Файл сохранён в загрузки.");
     } else {
       const { withAudio } = await recorder.start();
       btn.classList.add("on");
       btn.textContent = "■ Стоп";
-      $("#rec-hint").textContent = withAudio ? "Пишу видео и микрофон." : "Пишу видео без звука.";
+      toast(withAudio ? "Пишу видео и микрофон." : "Пишу видео без звука.");
     }
   };
   $("#shot").onclick = () => recorder.snapshot();
+}
+
+let toastTimer = 0;
+/** Короткое сообщение над тулбаром: панели с подсказками больше нет. */
+function toast(text, ms = 3200) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
 
 function flash(btn, text) {
@@ -437,14 +461,13 @@ function flash(btn, text) {
 
 async function ensureSegmenter() {
   if (segmenter) return;
-  const hint = $("#mode-hint");
-  hint.textContent = "Загружаю модель сегментации…";
+  toast("Загружаю модель сегментации…");
   try {
     segmenter = await createSegmenter();
     cutout.reset();
-    hint.textContent = "Сегментация вырезает человека и ставит его на сгенерированный фон.";
+    toast("Сегментация готова.");
   } catch (err) {
-    hint.textContent = `Сегментация не загрузилась: ${err.message}`;
+    toast(`Сегментация не загрузилась: ${err.message}`, 6000);
   }
 }
 
