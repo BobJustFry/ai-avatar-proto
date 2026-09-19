@@ -1,0 +1,26 @@
+[
+  {
+    "id": "hf-studio",
+    "name": "Higgsfield: тёмная студия",
+    "type": "image",
+    "ready": false,
+    "src": "assets/scenes/studio.jpg",
+    "palette": ["#141a24", "#2c3a52", "#5b7ba6"]
+  },
+  {
+    "id": "hf-office",
+    "name": "Higgsfield: офис у окна",
+    "type": "image",
+    "ready": false,
+    "src": "assets/scenes/office.jpg",
+    "palette": ["#2a2a33", "#6b6455", "#d8c39a"]
+  },
+  {
+    "id": "hf-city-loop",
+    "name": "Higgsfield: город, видео-луп",
+    "type": "video",
+    "ready": false,
+    "src": "assets/scenes/city-loop.mp4",
+    "palette": ["#0d1220", "#243b6b", "#7aa2d8"]
+  }
+]

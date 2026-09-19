@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Интерактивный ИИ аватар</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="out" width="1280" height="720"></canvas>
+  <video id="cam" playsinline muted></video>
+  <div id="boot">
+    <p id="boot-msg">Загружаю модели MediaPipe…</p>
+    <button id="boot-btn" hidden>Включить камеру</button>
+    <button id="boot-file" class="ghost" hidden>Работать с файлом без камеры</button>
+  </div>
+  <div id="hud"><span id="fps">—</span><span id="face">нет лица</span></div>
+</div>
+
+<aside id="panel">
+  <h1>ИИ аватар</h1>
+
+  <section>
+    <label>Режим</label>
+    <div class="row">
+      <button class="seg on" data-mode="avatar">Аватар</button>
+      <button class="seg" data-mode="cutout">Я на фоне</button>
+    </div>
+    <p class="hint" id="mode-hint">Мимика управляет нарисованным персонажем, человека в кадре нет.</p>
+  </section>
+
+  <section>
+    <label>Сцена <span class="sub">фон от Higgsfield</span></label>
+    <select id="scene"></select>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="parallax" checked> Параллакс по голове</label>
+    </div>
+  </section>
+
+  <section>
+    <label>Настройка</label>
+    <div class="row">
+      <button id="calib">Калибровать позу</button>
+      <button id="reload-rig">Перезагрузить аватар</button>
+    </div>
+    <p class="hint">Смотрите прямо в камеру и нажмите «Калибровать» — текущая поза станет нейтральной.</p>
+    <label class="chk"><input type="checkbox" id="invert-mask"> Инвертировать маску (режим «Я на фоне»)</label>
+    <label class="chk"><input type="checkbox" id="debug"> Отладка: сетка лица и блендшейпы</label>
+  </section>
+
+  <section id="video-section">
+    <label>Видео → видео <span class="sub">замена персонажа и фона</span></label>
+    <div class="row">
+      <button id="rec-src">● Записать исходник</button>
+      <button id="pick-file">Открыть файл</button>
+    </div>
+    <input type="file" id="file" accept="video/*" hidden>
+    <p class="hint" id="src-info">Исходник не выбран.</p>
+    <div class="row">
+      <button id="process" disabled>Обработать в аватара</button>
+    </div>
+    <div id="progress" hidden><div id="bar"></div></div>
+    <p class="hint" id="proc-hint">Обработка идёт в реальном времени: минута ролика — минута работы. Голос из исходника сохраняется.</p>
+  </section>
+
+  <section>
+    <label>Живая запись</label>
+    <div class="row">
+      <button id="rec">● Запись</button>
+      <button id="shot">Снимок</button>
+    </div>
+    <p class="hint" id="rec-hint">WebM с канваса + микрофон, если разрешите.</p>
+  </section>
+
+  <section id="assets-state">
+    <label>Ассеты</label>
+    <p class="hint" id="asset-msg">—</p>
+  </section>
+</aside>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

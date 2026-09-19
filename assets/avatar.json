@@ -1,0 +1,26 @@
+{
+  "name": "default",
+  "assets": false,
+  "dir": "assets/layers/",
+  "size": [1024, 1024],
+  "headPivot": [512, 790],
+  "layers": [
+    { "id": "hair_back", "group": "head" },
+    { "id": "body", "group": "body" },
+    { "id": "head", "group": "head" },
+    { "id": "eye_white_l", "group": "head" },
+    { "id": "eye_white_r", "group": "head" },
+    { "id": "iris_l", "group": "head", "bind": "iris", "side": "l" },
+    { "id": "iris_r", "group": "head", "bind": "iris", "side": "r" },
+    { "id": "eyelid_l", "group": "head", "bind": "eyelid", "side": "l", "pivot": [428, 507] },
+    { "id": "eyelid_r", "group": "head", "bind": "eyelid", "side": "r", "pivot": [596, 507] },
+    { "id": "brow_l", "group": "head", "bind": "brow", "side": "l" },
+    { "id": "brow_r", "group": "head", "bind": "brow", "side": "r" },
+    { "id": "mouth_closed", "group": "head", "bind": "mouth", "viseme": "closed", "pivot": [512, 670] },
+    { "id": "mouth_smile", "group": "head", "bind": "mouth", "viseme": "smile", "pivot": [512, 670] },
+    { "id": "mouth_e", "group": "head", "bind": "mouth", "viseme": "e", "pivot": [512, 670] },
+    { "id": "mouth_aa", "group": "head", "bind": "mouth", "viseme": "aa", "pivot": [512, 670] },
+    { "id": "mouth_o", "group": "head", "bind": "mouth", "viseme": "o", "pivot": [512, 670] },
+    { "id": "hair_front", "group": "head" }
+  ]
+}
