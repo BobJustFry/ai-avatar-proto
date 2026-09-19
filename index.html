@@ -49,6 +49,26 @@
     <label class="chk"><input type="checkbox" id="debug"> Отладка: сетка лица и блендшейпы</label>
   </section>
 
+  <section id="live-section">
+    <label>Лайв <span class="sub">эфир</span></label>
+    <label class="chk"><input type="checkbox" id="use-provider"> Фотореалистичный аватар провайдера</label>
+    <select id="avatar-id" hidden></select>
+    <div class="row">
+      <button class="seg-voice on" data-voice="mic">Мой голос</button>
+      <button class="seg-voice" data-voice="tts">Синтез голоса</button>
+    </div>
+    <select id="voice-id" hidden></select>
+    <textarea id="say-text" rows="2" placeholder="Что сказать аватару" hidden></textarea>
+    <div class="row" id="say-row" hidden><button id="say">Сказать</button></div>
+    <p class="hint" id="provider-hint">Локальный риг ведётся вашим лицом и бесплатен. Провайдер ведётся голосом: фотореализм, но мимика генерируется моделью, а не снимается с вас. Нужен ключ на сервере.</p>
+    <input id="whip-url" placeholder="WHIP URL, например https://.../whip">
+    <input id="whip-token" type="password" placeholder="Bearer-токен, если требуется">
+    <div class="row">
+      <button id="go-live">В эфир</button>
+    </div>
+    <p class="hint" id="live-hint">Без WHIP можно отдать картинку в OBS: Browser Source на этот адрес.</p>
+  </section>
+
   <section id="video-section">
     <label>Видео → видео <span class="sub">замена персонажа и фона</span></label>
     <div class="row">

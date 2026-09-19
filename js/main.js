@@ -4,10 +4,12 @@
 import { createFaceLandmarker, createSegmenter, openCamera } from "./tracker.js";
 import { FaceSignals } from "./signals.js";
 import { Rig } from "./rig.js";
-import { Scenes } from "./scene.js";
+import { Scenes, drawCover } from "./scene.js";
 import { Cutout } from "./cutout.js";
 import { Recorder } from "./recorder.js";
 import { SourceRecorder, VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
+import { WhipPublisher } from "./live.js";
+import { LiveAvatarProvider } from "./provider.js";
 
 const $ = (sel) => document.querySelector(sel);
 const canvas = $("#out");
@@ -22,6 +24,8 @@ const state = {
   running: false,   // крутится ли живое превью
   busy: false,      // идёт обработка файла
   hasCamera: false,
+  provider: false,  // кадр даёт внешний фотореалистичный аватар
+  voiceMode: "mic", // чем говорит аватар: "mic" — вашим голосом, "tts" — синтезом
 };
 
 const signals = new FaceSignals();
@@ -31,6 +35,8 @@ const cutout = new Cutout();
 const recorder = new Recorder(canvas);
 const srcRec = new SourceRecorder();
 const processor = new VideoProcessor(canvas);
+const whip = new WhipPublisher();
+const provider = new LiveAvatarProvider();
 
 let landmarker = null;
 let segmenter = null;
@@ -84,7 +90,7 @@ async function startCamera() {
 }
 
 function startLoop() {
-  if (!state.hasCamera || state.busy) return;
+  if ((!state.hasCamera && !state.provider) || state.busy) return;
   state.running = true;
   last = performance.now();
   requestAnimationFrame(frame);
@@ -131,6 +137,13 @@ function frame(now) {
   last = now;
   fpsAvg = fpsAvg ? fpsAvg * 0.9 + (1 / dt) * 0.1 : 1 / dt;
 
+  if (state.provider) {
+    renderProvider();
+    $("#fps").textContent = `${fpsAvg.toFixed(0)} fps`;
+    $("#face").textContent = whip.active ? `эфир: ${whip.state}` : "провайдер";
+    return;
+  }
+
   if (video.readyState < 2) return;
   if (video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
@@ -141,6 +154,146 @@ function frame(now) {
 
   $("#fps").textContent = `${fpsAvg.toFixed(0)} fps`;
   $("#face").textContent = signals.present ? `визема: ${signals.viseme}` : "нет лица";
+}
+
+// --- фотореалистичный аватар провайдера --------------------------------------
+
+// Кадр провайдера приходит со своим фоном, поэтому режем его той же
+// сегментацией, что и человека в режиме «Я на фоне».
+function renderProvider() {
+  const el = provider.video;
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  scenes.draw(ctx, w, h, signals.v, { parallax: false });
+  if (!el || el.readyState < 2) return;
+
+  if (segmenter) {
+    const res = segmenter.segmentForVideo(el, performance.now());
+    if (res?.categoryMask) cutout.update(el, res.categoryMask, { invert: state.invertMask });
+    res?.close?.();
+    cutout.repaint(ctx, w, h, false);
+  } else {
+    drawCover(ctx, el, w, h, 0, 0, 1, false);
+  }
+}
+
+async function toggleProvider(on) {
+  const hint = $("#provider-hint");
+  if (!on) {
+    state.provider = false;
+    await provider.stop();
+    hint.textContent = "Провайдер отключён, кадр снова ведёт локальный риг.";
+    startLoop();
+    return;
+  }
+  try {
+    hint.textContent = "Поднимаю сессию провайдера…";
+    provider.onState = (msg) => { hint.textContent = msg; };
+    await ensureSegmenter();
+    const avatarId = $("#avatar-id").value;
+    if (!avatarId) throw new Error("не выбран аватар");
+    await provider.start({ avatarId, quality: "very_high", voiceMode: state.voiceMode });
+    state.provider = true;
+    cutout.reset();
+    startLoop();
+  } catch (err) {
+    console.error(err);
+    $("#use-provider").checked = false;
+    state.provider = false;
+    hint.textContent = `Провайдер не поднялся: ${err.message}`;
+  }
+}
+
+function applyVoiceModeUI() {
+  const tts = state.voiceMode === "tts";
+  $("#say-text").hidden = !tts;
+  $("#say-row").hidden = !tts;
+  $("#voice-id").hidden = !tts || !$("#voice-id").options.length;
+}
+
+async function setVoiceMode(mode) {
+  state.voiceMode = mode;
+  document.querySelectorAll(".seg-voice").forEach((b) => b.classList.toggle("on", b.dataset.voice === mode));
+  applyVoiceModeUI();
+  if (provider.active) await provider.setVoiceMode(mode);
+}
+
+async function say() {
+  const text = $("#say-text").value.trim();
+  if (!text) return;
+  const btn = $("#say");
+  btn.disabled = true;
+  try {
+    await provider.say(text, $("#voice-id").value || undefined);
+  } catch (err) {
+    $("#provider-hint").textContent = `Синтез не прошёл: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function fillVoices() {
+  const sel = $("#voice-id");
+  try {
+    const { voices = [], current } = await provider.listVoices();
+    if (!voices.length) return; // ключа синтеза нет — остаётся режим «мой голос»
+    sel.innerHTML = voices.map((v) => `<option value="${v.id}">${v.name}</option>`).join("");
+    if (current) sel.value = current;
+    applyVoiceModeUI();
+  } catch {
+    // сервер не поднят: режим синтеза просто не покажет список
+  }
+}
+
+async function fillAvatars() {
+  const sel = $("#avatar-id");
+  try {
+    const list = await provider.listAvatars();
+    const items = Array.isArray(list) ? list : list.items ?? [];
+    if (!items.length) throw new Error("каталог пуст");
+    sel.innerHTML = items
+      .map((a) => `<option value="${a.id ?? a.avatar_id}">${a.name ?? a.id}</option>`)
+      .join("");
+    sel.hidden = false;
+  } catch (err) {
+    sel.hidden = true;
+    $("#provider-hint").textContent =
+      `Каталог аватаров недоступен: ${err.message}. Нужен запущенный server/live-server.mjs с ключом.`;
+  }
+}
+
+async function toggleLive() {
+  const btn = $("#go-live");
+  const hint = $("#live-hint");
+  if (whip.active) {
+    await whip.stop();
+    btn.classList.remove("on");
+    btn.textContent = "В эфир";
+    hint.textContent = "Эфир остановлен.";
+    return;
+  }
+  try {
+    btn.disabled = true;
+    // Звук в эфир: голос аватара от провайдера либо обычный микрофон.
+    let audioTrack = provider.audioTrack ?? null;
+    if (!audioTrack) {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+      audioTrack = mic?.getAudioTracks()[0] ?? null;
+    }
+    await whip.start(canvas, {
+      url: $("#whip-url").value.trim(),
+      token: $("#whip-token").value.trim() || undefined,
+      audioTrack,
+    });
+    btn.classList.add("on");
+    btn.textContent = "Остановить эфир";
+    hint.textContent = audioTrack ? "В эфире, со звуком." : "В эфире, без звука.";
+  } catch (err) {
+    console.error(err);
+    hint.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // --- конвейер видео → видео --------------------------------------------------
@@ -219,6 +372,15 @@ function wireUI() {
     flash($("#reload-rig"), "Обновлено");
   };
 
+  $("#use-provider").onchange = (e) => toggleProvider(e.target.checked);
+  $("#go-live").onclick = toggleLive;
+  for (const btn of document.querySelectorAll(".seg-voice")) {
+    btn.onclick = () => setVoiceMode(btn.dataset.voice);
+  }
+  $("#say").onclick = say;
+  fillAvatars();
+  fillVoices();
+
   $("#pick-file").onclick = () => $("#file").click();
   $("#file").onchange = (e) => {
     const f = e.target.files?.[0];
@@ -282,7 +444,7 @@ async function ensureSegmenter() {
 
 // Доступ из консоли: можно прогнать рендер с искусственными сигналами,
 // не включая камеру — удобно при подгонке слоёв.
-window.__avatar = { state, signals, rig, scenes, cutout, processor, render, analyze, canvas, ctx };
+window.__avatar = { state, signals, rig, scenes, cutout, processor, whip, provider, render, analyze, canvas, ctx };
 
 function drawDebug(sig) {
   const w = canvas.width, h = canvas.height;

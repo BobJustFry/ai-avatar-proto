@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "avatar",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "serve", "-l", "5173", "."],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server/live-server.mjs"],
       "port": 5173
     }
   ]
