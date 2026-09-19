@@ -4,7 +4,7 @@
     {
       "name": "avatar",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server/live-server.mjs"],
+      "runtimeArgs": ["--env-file-if-exists=.env", "server/live-server.mjs"],
       "port": 5173
     }
   ]

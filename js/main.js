@@ -247,18 +247,24 @@ async function fillVoices() {
 
 async function fillAvatars() {
   const sel = $("#avatar-id");
+  const hint = $("#provider-hint");
   try {
     const list = await provider.listAvatars();
-    const items = Array.isArray(list) ? list : list.items ?? [];
-    if (!items.length) throw new Error("каталог пуст");
+    const items = Array.isArray(list) ? list : list.items ?? list.avatars ?? [];
+    if (!items.length) {
+      sel.hidden = true;
+      hint.textContent = list.configured === false
+        ? "Ключ провайдера не задан — доступен только локальный риг. Как включить: docs/streaming.md."
+        : "Каталог аватаров пуст.";
+      return;
+    }
     sel.innerHTML = items
       .map((a) => `<option value="${a.id ?? a.avatar_id}">${a.name ?? a.id}</option>`)
       .join("");
     sel.hidden = false;
   } catch (err) {
     sel.hidden = true;
-    $("#provider-hint").textContent =
-      `Каталог аватаров недоступен: ${err.message}. Нужен запущенный server/live-server.mjs с ключом.`;
+    hint.textContent = `Каталог аватаров недоступен: ${err.message}. Нужен запущенный server/live-server.mjs.`;
   }
 }
 

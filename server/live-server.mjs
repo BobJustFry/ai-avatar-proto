@@ -134,12 +134,15 @@ async function handleApi(req, res, path) {
     });
   }
 
-  if (!API_KEY) return json(res, 500, { error: "не задан LIVEAVATAR_API_KEY" });
-
+  // Пустой каталог без ключа — это корректный ответ, а не сбой сервера,
+  // поэтому 200: иначе чистый старт светит красным в консоли браузера.
   if (path === "/api/live/avatars" && req.method === "GET") {
+    if (!API_KEY) return json(res, 200, { avatars: [], configured: false });
     const data = await api("/v1/avatars/public?page=1&page_size=50", { method: "GET", key: API_KEY });
     return json(res, 200, data?.data ?? data);
   }
+
+  if (!API_KEY) return json(res, 503, { error: "не задан LIVEAVATAR_API_KEY" });
 
   if (path === "/api/live/session" && req.method === "POST") {
     const { avatarId, quality = "very_high", sandbox = false } = await readJson(req);
