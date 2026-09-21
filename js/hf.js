@@ -109,6 +109,18 @@ export async function waitForJob(jobId, { onTick, intervalMs = 5000, timeoutMs =
   }
 }
 
+/**
+ * Подписка на изменения: сервер сам следит за заданиями и присылает список,
+ * когда что-то меняется. Обновлять руками больше не нужно.
+ */
+export function subscribeJobs(onItems) {
+  const es = new EventSource(`${API}/events`);
+  es.addEventListener("jobs", (e) => {
+    try { onItems(JSON.parse(e.data)); } catch { /* пропускаем битый кадр */ }
+  });
+  return () => es.close();
+}
+
 /** Всё, что сгенерировано на аккаунте. */
 export async function hfLibrary() {
   const res = await fetch(`${API}/library`);

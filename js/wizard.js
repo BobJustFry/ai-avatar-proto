@@ -8,7 +8,7 @@
 import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { FlatKey } from "./flatkey.js";
 import { drawCover } from "./scene.js";
-import { hfStatus, hfRecheck, hfLibrary, waitForJob, makeSheet, makeBackground, runSwap, runObjectSwap } from "./hf.js";
+import { hfStatus, hfRecheck, hfLibrary, subscribeJobs, waitForJob, makeSheet, makeBackground, runSwap, runObjectSwap } from "./hf.js";
 
 const $ = (s) => document.querySelector(s);
 const canvas = $("#out");
@@ -443,6 +443,20 @@ function sheetAspect() {
  * быть не может, и вкладку легко закрыть, поэтому источник правды — не память
  * страницы, а сам Higgsfield.
  */
+function renderLibrary(items) {
+  const box = $("#lib-items");
+  if (!items.length) {
+    $("#lib-info").textContent = "Пока пусто: ни одной генерации на аккаунте.";
+    box.replaceChildren();
+    return;
+  }
+  const working = items.filter((i) => i.status !== "completed" && i.status !== "failed").length;
+  $("#lib-info").textContent = working
+    ? `В работе: ${working}. Список обновляется сам, ждать у экрана не нужно.`
+    : "Нажмите на результат, чтобы посмотреть, или выберите, куда его подставить.";
+  box.replaceChildren(...items.map(renderLibCard));
+}
+
 async function loadLibrary() {
   const box = $("#lib-items");
   try {
@@ -452,8 +466,7 @@ async function loadLibrary() {
       box.replaceChildren();
       return;
     }
-    $("#lib-info").textContent = "Нажмите на результат, чтобы посмотреть, или выберите, куда его подставить.";
-    box.replaceChildren(...items.map(renderLibCard));
+    renderLibrary(items);
   } catch (err) {
     $("#lib-info").textContent = `Библиотека недоступна: ${err.message}`;
   }
@@ -687,6 +700,9 @@ function wire() {
 
   $("#lib-refresh").onclick = loadLibrary;
   loadLibrary();
+  // Дальше список поддерживает сервер: он один следит за заданиями и шлёт
+  // изменения во все открытые вкладки.
+  subscribeJobs(renderLibrary);
 
   $("#recheck").onclick = async () => {
     const btn = $("#recheck");

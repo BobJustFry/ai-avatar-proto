@@ -121,6 +121,57 @@ function speakPcm(ws, pcm) {
   send(ws, { type: "agent.speak_end" });
 }
 
+// --- Слежение за заданиями ---------------------------------------------------
+//
+// Вебхук от Higgsfield сюда не дойдёт: машина за VPN, а CLI его и не умеет.
+// Поэтому опрашиваем сами — но один раз на сервере, а не в каждой вкладке, и
+// рассылаем изменения подписчикам. Браузеру остаётся слушать.
+
+const watchers = new Set();
+let lastSnapshot = "";
+let watchTimer = null;
+
+async function pollJobs() {
+  if (!watchers.size) return;
+  const r = await runCli(["--json", "generate", "list"], { timeout: 90_000 });
+  if (r.code !== 0) return;
+  let items;
+  try {
+    const raw = JSON.parse(r.out);
+    const arr = Array.isArray(raw) ? raw : raw.items ?? raw.results ?? [];
+    items = arr.map((x) => ({
+      id: x.id,
+      model: x.display_name ?? x.job_type,
+      kind: /video|motion|kling|veo|seedance|wan/i.test(x.job_type ?? "") ? "video" : "image",
+      status: x.status,
+      url: x.result_url ?? x.min_result_url ?? null,
+      createdAt: x.created_at,
+    }));
+  } catch {
+    return;
+  }
+  const snapshot = JSON.stringify(items);
+  if (snapshot === lastSnapshot) return;
+  lastSnapshot = snapshot;
+  if (items.some((i) => i.status === "completed")) setGenState("ok");
+  const frame = `event: jobs\ndata: ${snapshot}\n\n`;
+  for (const res of watchers) res.write(frame);
+}
+
+function startWatching() {
+  if (watchTimer) return;
+  // Пока кто-то смотрит — опрашиваем. Когда вкладки закрыты, не тревожим API.
+  watchTimer = setInterval(() => { pollJobs().catch(() => {}); }, 10_000);
+  pollJobs().catch(() => {});
+}
+
+function stopWatchingIfIdle() {
+  if (watchers.size || !watchTimer) return;
+  clearInterval(watchTimer);
+  watchTimer = null;
+  lastSnapshot = "";
+}
+
 // --- Higgsfield: замена персонажа --------------------------------------------
 //
 // Ходим через CLI, а не напрямую в REST: публичная спецификация перечисляет
@@ -258,6 +309,24 @@ async function handleHiggsfield(req, res, path) {
   if (path === "/api/hf/recheck" && req.method === "POST") {
     await setGenState("unknown");
     return json(res, 200, { genState });
+  }
+
+  // Поток обновлений: библиотека перестаёт требовать ручного обновления.
+  if (path === "/api/hf/events" && req.method === "GET") {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+    });
+    res.write("retry: 5000\n\n");
+    watchers.add(res);
+    if (lastSnapshot) res.write(`event: jobs\ndata: ${lastSnapshot}\n\n`);
+    startWatching();
+    req.on("close", () => {
+      watchers.delete(res);
+      stopWatchingIfIdle();
+    });
+    return;
   }
 
   // Библиотека: всё, что когда-либо сгенерировано на аккаунте. Нужна потому,
