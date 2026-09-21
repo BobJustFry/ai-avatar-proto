@@ -236,6 +236,13 @@ function cliError(res) {
 }
 
 async function handleHiggsfield(req, res, path) {
+  // Сброс запомненного запрета: после смены тарифа приложение должно узнать
+  // об этом, а не держаться за вывод прошлой недели.
+  if (path === "/api/hf/recheck" && req.method === "POST") {
+    await setGenState("unknown");
+    return json(res, 200, { genState });
+  }
+
   if (path === "/api/hf/status" && req.method === "GET") {
     const version = await runCli(["--version"], { timeout: 30_000 });
     const configured = !!(HF_ID && HF_SECRET);
@@ -249,8 +256,18 @@ async function handleHiggsfield(req, res, path) {
       );
       authOk = probe.code === 0;
     }
+    // План и баланс отдаёт сам CLI, бесплатно и без генерации.
+    let account = null;
+    if (authOk) {
+      const acc = await runCli(["--json", "account", "status"], { timeout: 60_000 });
+      if (acc.code === 0) {
+        try { account = JSON.parse(acc.out); } catch { /* формат сменился */ }
+      }
+    }
     return json(res, 200, {
       cli: version.code === 0, configured, authOk, genState,
+      credits: account?.credits ?? null,
+      plan: account?.subscription_plan_type ?? null,
       via: cliJs ? "node" : "shell",
     });
   }

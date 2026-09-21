@@ -36,20 +36,27 @@ export async function hfStatus() {
     if (!d.authOk) {
       return { ready: false, reason: "Ключ Higgsfield не принят — проверьте пару ID и секрет в .env." };
     }
+    const account = { credits: d.credits, plan: d.plan };
     if (d.genState === "blocked") {
       return {
+        ...account,
         ready: false,
         state: "blocked",
-        reason: "Тариф Higgsfield не даёт приложению генерировать. Сделайте этот шаг "
-          + "снаружи и загрузите готовый файл кнопкой ниже.",
+        reason: "Тариф Higgsfield не давал приложению генерировать при прошлой попытке. "
+          + "Если план сменился — нажмите «Проверить ещё раз».",
       };
     }
     // «unknown» — ключ рабочий, но генерацию ещё ни разу не пробовали.
     // Врать «всё готово» нельзя: доступность выяснится только на первой попытке.
-    return { ready: true, state: d.genState === "ok" ? "ok" : "unknown", reason: "" };
+    return { ...account, ready: true, state: d.genState === "ok" ? "ok" : "unknown", reason: "" };
   } catch (err) {
     return { ready: false, reason: `Сервер недоступен (${err.message}). Запустите run.cmd.` };
   }
+}
+
+/** Забыть прошлый отказ и проверить доступность заново. */
+export async function hfRecheck() {
+  return post("/recheck", {});
 }
 
 /** Чистовой лист персонажа из произвольного фото. */

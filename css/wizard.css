@@ -22,6 +22,11 @@
 #notice b{color:#ffd978; margin-right:6px}
 #notice.ok{background:#14261b; border-color:#2e5a3c; color:#bfe6cd}
 #notice.ok b{color:#8fe3ab}
+#notice #recheck{
+  display:inline-block; margin-left:8px; padding:4px 10px; font-size:12px;
+  background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:inherit;
+}
+#notice #recheck:hover{background:rgba(255,255,255,.14)}
 #notice.warn{background:#1a2030; border-color:#2f3d58; color:#c5d2ea}
 #notice.warn b{color:#9dc0f5}
 

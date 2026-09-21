@@ -8,7 +8,7 @@
 import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { FlatKey } from "./flatkey.js";
 import { drawCover } from "./scene.js";
-import { hfStatus, makeSheet, makeBackground, runSwap } from "./hf.js";
+import { hfStatus, hfRecheck, makeSheet, makeBackground, runSwap } from "./hf.js";
 
 const $ = (s) => document.querySelector(s);
 const canvas = $("#out");
@@ -404,21 +404,25 @@ async function checkHiggsfield() {
   notice.hidden = false;
   notice.classList.toggle("ok", res.state === "ok");
   notice.classList.toggle("warn", res.state === "unknown");
+  const balance = res.credits != null
+    ? ` План ${res.plan ?? "?"}, кредитов: ${res.credits}.`
+    : "";
+  $("#recheck").hidden = res.state !== "blocked";
   if (res.state === "ok") {
     $("#notice-title").textContent = "Всё готово.";
     $("#notice-text").textContent =
-      "Higgsfield подключён, мастер проходится целиком: шаги 2 и 4 считаются автоматически.";
+      "Мастер проходится целиком: шаги 2 и 4 считаются автоматически." + balance;
   } else if (res.state === "unknown") {
     $("#notice-title").textContent = "Генерация ещё не проверена.";
-    $("#notice-text").textContent =
-      "Ключ Higgsfield принят, но доступна ли генерация на вашем тарифе, выяснится "
+    $("#notice-text").textContent = balance +
+      " Ключ принят, но доступна ли генерация на вашем тарифе, выяснится "
       + "только на первой попытке — счёт кредитов заранее узнать нельзя. Если тариф "
       + "её не даст, мастер сразу переключится на ручной путь и больше не будет "
       + "предлагать кнопки, которые не работают.";
   } else {
     $("#notice-title").textContent = "Шаги 2 и 4 сейчас не работают.";
     $("#notice-text").textContent =
-      `${res.reason} Шаги 1, 3 и 5 работают как обычно: выбор исходника, фон и сборка `
+      `${res.reason}${balance} Шаги 1, 3 и 5 работают как обычно: выбор исходника, фон и сборка `
       + "готового ролика со звуком. Чистовой лист и замену нужно получить снаружи "
       + "и подставить кнопками «Фото уже чистовое» и «Загрузить готовый результат замены».";
   }
@@ -470,6 +474,16 @@ function wire() {
     }
   };
   $("#assemble").onclick = assemble;
+
+  $("#recheck").onclick = async () => {
+    const btn = $("#recheck");
+    btn.disabled = true;
+    btn.textContent = "Проверяю…";
+    await hfRecheck().catch(() => {});
+    await checkHiggsfield();
+    btn.disabled = false;
+    btn.textContent = "Проверить ещё раз";
+  };
 
   showEmpty(true, "Здесь появится кадр");
   fitPreview();
