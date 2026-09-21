@@ -174,3 +174,19 @@ body[data-mode="object"] .title-character{display:none !important}
 .lib-card.failed{opacity:.9; border-color:#5a2b2b}
 .lib-card.failed .badge{background:#4a1f1f; color:#ffb4b4}
 .lib-card.failed .placeholder{color:#e08a8a}
+
+/* ─── выбор звука ─── */
+.seg-sound{flex:1}
+.seg-sound.on{background:var(--accent-2); color:#1a1014; border-color:transparent; font-weight:600}
+#voice-list{display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:6px; margin-top:8px}
+.voice{
+  display:flex; align-items:center; gap:6px; padding:6px 8px;
+  background:var(--raised); border:1px solid var(--line); border-radius:8px;
+  cursor:pointer; font-size:12.5px;
+}
+.voice.on{border-color:var(--accent-2); background:#2a1d24}
+.voice .play{
+  width:22px; height:22px; flex:none; padding:0; border-radius:50%;
+  background:#0b0d11; border:1px solid var(--line); font-size:10px; line-height:1;
+}
+.voice .sex{margin-left:auto; color:var(--faint); font-size:11px}

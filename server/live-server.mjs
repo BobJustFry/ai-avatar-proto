@@ -211,6 +211,20 @@ const SHEET_PROMPT = [
   "No text, no logos, no watermarks, no borders. Centered composition.",
 ].join(" ");
 
+// Замок перспективы: кадрирование берётся со второго референса — кадра из
+// исходного видео. Без него лист получается студийным поясным, а съёмка идёт
+// с другого расстояния и угла, и два кадра потом не сводятся.
+const SHEET_PROMPT_MATCHED = [
+  "Redraw the character from the FIRST reference image as a clean character reference.",
+  "Keep that character's identity, colours, clothing and accessories exactly.",
+  "Match the framing of the SECOND reference image precisely: same shot size,",
+  "same camera distance, same camera height, same viewing angle, same head position in frame.",
+  "Do not copy the person, the background or the clothing from the second image — only its camera.",
+  "Give the character a clear, expressive mouth, closed and neutral.",
+  "Plain flat light-gray background, even soft lighting, no cast shadows.",
+  "No text, no logos, no watermarks, no borders.",
+].join(" ");
+
 function runCli(args, { timeout = 600_000 } = {}) {
   return new Promise((resolve) => {
     const [cmd, argv] = cliJs
@@ -409,13 +423,17 @@ async function handleHiggsfield(req, res, path) {
 
   if (path === "/api/hf/sheet") {
     if (!body.image) return json(res, 400, { error: "нет изображения" });
-    return withTempFiles({ ref: { base64: body.image, ext: "png" } }, async (p) => {
+    const files = { ref: { base64: body.image, ext: "png" } };
+    if (body.frame) files.frame = { base64: body.frame, ext: "png" };
+    return withTempFiles(files, async (p) => {
+      const matched = !!p.frame;
       const started = await startJob([
         "generate", "create", "nano_banana_pro",
-        "--prompt", body.prompt || SHEET_PROMPT,
+        "--prompt", body.prompt || (matched ? SHEET_PROMPT_MATCHED : SHEET_PROMPT),
         "--aspect-ratio", body.aspect || "9:16",
         "--resolution", "2k",
         "--image", p.ref,
+        ...(matched ? ["--image-references", p.frame] : []),
       ]);
       return started.jobId
         ? json(res, 200, { jobId: started.jobId })
@@ -434,6 +452,28 @@ async function handleHiggsfield(req, res, path) {
     return started.jobId
       ? json(res, 200, { jobId: started.jobId })
       : json(res, 502, { error: started.error });
+  }
+
+  // Звук готового ролика. Видео можно не загружать заново: CLI принимает
+  // идентификатор прошлой генерации как медиа-вход.
+  if (path === "/api/hf/dub" || path === "/api/hf/voice") {
+    const isDub = path === "/api/hf/dub";
+    if (!body.jobId && !body.video) return json(res, 400, { error: "нужен ролик" });
+    if (isDub && !body.language) return json(res, 400, { error: "нужен язык дубляжа" });
+    if (!isDub && !body.voiceId) return json(res, 400, { error: "нужен голос" });
+
+    const run = async (videoRef) => {
+      const started = await startJob(isDub
+        ? ["generate", "workflow", "dubbing", "--video", videoRef, "--target-language", body.language]
+        : ["generate", "workflow", "voice_change", "--video", videoRef,
+           "--voice-id", body.voiceId, "--voice-type", body.voiceType || "preset"]);
+      return started.jobId
+        ? json(res, 200, { jobId: started.jobId })
+        : json(res, 502, { error: started.error });
+    };
+
+    if (body.jobId) return run(body.jobId);
+    return withTempFiles({ src: { base64: body.video, ext: "mp4" } }, (p) => run(p.src));
   }
 
   // Замена предмета внутри снятой сцены: всё остальное в кадре не трогаем,

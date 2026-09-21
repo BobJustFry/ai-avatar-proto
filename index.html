@@ -60,6 +60,10 @@
           <p class="lead">Из этого фото делается <b>чистовой лист</b>: тот же герой
           анфас, в нейтральной позе, на ровном фоне. Именно он идёт в генерацию —
           напрямую фото со сцены работает плохо.</p>
+          <label class="chk"><input type="checkbox" id="lock-framing" checked>
+            Снять лист по кадру исходника</label>
+          <p class="hint">Крупность, высота камеры и угол возьмутся из вашего видео.
+          Без этого лист выйдет студийным, и два кадра потом не сведутся.</p>
           <div class="row">
             <button id="make-sheet" class="primary" disabled>Сделать чистовой лист</button>
             <button id="use-as-sheet" disabled>Фото уже чистовое</button>
@@ -155,6 +159,38 @@
           <p class="hint">Больше — чище вырезается заливка, но пропадают светлые
           места персонажа. Меньше — по краям остаётся кайма.</p>
         </div>
+        <div class="divider">звук</div>
+        <div class="row">
+          <button class="seg-sound on" data-sound="keep">Как есть</button>
+          <button class="seg-sound" data-sound="dub">Дубляж</button>
+          <button class="seg-sound" data-sound="voice">Сменить голос</button>
+        </div>
+        <div id="sound-dub" hidden>
+          <label class="pick">Язык
+            <select id="dub-language">
+              <option value="rus">русский</option>
+              <option value="eng">английский</option>
+              <option value="spa">испанский</option>
+              <option value="deu">немецкий</option>
+              <option value="fra">французский</option>
+              <option value="cmn">китайский</option>
+              <option value="tur">турецкий</option>
+              <option value="ara">арабский</option>
+            </select>
+          </label>
+          <p class="hint">Пересводит губы под речь. Около 27 кредитов за девять
+          секунд. Голос при этом становится синтетическим.</p>
+        </div>
+        <div id="sound-voice" hidden>
+          <div id="voice-list"></div>
+          <p class="hint">Меняет только голос, губы остаются как есть. Около
+          одного кредита за девять секунд.</p>
+        </div>
+        <div class="row" id="sound-run-row" hidden>
+          <button id="run-sound">Применить к ролику</button>
+        </div>
+        <p class="hint" id="sound-info"></p>
+
         <div id="progress" hidden><div id="bar"></div></div>
         <button id="assemble" class="primary" disabled>Собрать ролик</button>
         <p class="hint" id="assemble-info">Нужен результат замены.</p>

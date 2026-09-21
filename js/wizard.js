@@ -8,7 +8,7 @@
 import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { FlatKey } from "./flatkey.js";
 import { drawCover } from "./scene.js";
-import { hfStatus, hfRecheck, hfLibrary, subscribeJobs, waitForJob, makeSheet, makeBackground, runSwap, runObjectSwap } from "./hf.js";
+import { hfStatus, hfRecheck, hfLibrary, subscribeJobs, waitForJob, makeSheet, makeBackground, runSwap, runObjectSwap, runDubbing, runVoiceChange } from "./hf.js";
 
 const $ = (s) => document.querySelector(s);
 const canvas = $("#out");
@@ -30,6 +30,9 @@ const state = {
   // Что делаем с обстановкой: keep — оставить снятую, replace — подставить
   // свою, plate — получить ровную заливку и решить потом.
   bgMode: "keep",
+  sound: "keep",      // keep — ничего не трогаем, dub — дубляж, voice — смена голоса
+  voiceId: null,
+  swapJobId: null,    // чтобы не загружать ролик заново для звука
 };
 
 // --- шаги --------------------------------------------------------------------
@@ -364,9 +367,27 @@ async function longStep(btn, info, label, fn) {
   }
 }
 
+/** Кадр из середины исходника — по нему выравнивается крупность листа. */
+async function sourceFrameBlob() {
+  const el = state.src?.el;
+  if (!el) return null;
+  await seekTo(el, Math.min(1.5, (state.src.duration || 3) / 3));
+  const cv = document.createElement("canvas");
+  cv.width = el.videoWidth;
+  cv.height = el.videoHeight;
+  cv.getContext("2d").drawImage(el, 0, 0);
+  return new Promise((r) => cv.toBlob(r, "image/png"));
+}
+
 function generateSheet() {
   return longStep($("#make-sheet"), "#sheet-info", "Рисую…", async () => {
-    const { jobId } = await makeSheet(state.charFile.file, { aspect: sheetAspect() });
+    const lock = $("#lock-framing").checked;
+    const frameBlob = lock ? await sourceFrameBlob() : null;
+    if (lock && !frameBlob) {
+      $("#sheet-info").textContent = "Для замка перспективы нужен исходник — выберите его на шаге 1.";
+      return;
+    }
+    const { jobId } = await makeSheet(state.charFile.file, { aspect: sheetAspect(), frameBlob });
     $("#sheet-info").textContent = `Задание ${jobId.slice(0, 8)} поставлено в очередь…`;
     loadLibrary();
     const url = await waitForJob(jobId, {
@@ -415,6 +436,7 @@ function generateSwap() {
     const url = await waitForJob(jobId, {
       onTick: (sec) => { $("#swap-info").textContent = `Считается, прошло ${sec} с. Результат не потеряется: он появится в библиотеке.`; },
     });
+    state.swapJobId = jobId;
     await useSwapResult(await fetchAsFile(url, "swap.mp4"));
     loadLibrary();
   });
@@ -451,6 +473,82 @@ function sheetAspect() {
   if (r > 0.9) return "1:1";
   if (r > 0.72) return "3:4";
   return "9:16";
+}
+
+// --- звук готового ролика ----------------------------------------------------
+
+function setSound(kind) {
+  state.sound = kind;
+  for (const b of document.querySelectorAll(".seg-sound")) {
+    b.classList.toggle("on", b.dataset.sound === kind);
+  }
+  $("#sound-dub").hidden = kind !== "dub";
+  $("#sound-voice").hidden = kind !== "voice";
+  $("#sound-run-row").hidden = kind === "keep";
+  if (kind === "voice") loadVoices();
+  refresh();
+}
+
+let voicesLoaded = false;
+async function loadVoices() {
+  if (voicesLoaded) return;
+  try {
+    const data = await (await fetch("/assets/voices.json")).json();
+    const box = $("#voice-list");
+    box.replaceChildren(...data.voices.map((v) => {
+      const el = document.createElement("div");
+      el.className = "voice";
+      el.dataset.id = v.id;
+      el.innerHTML = `<button class="play" title="Послушать">▶</button>`
+        + `<span>${v.name}</span><span class="sex">${v.gender === "male" ? "м" : "ж"}</span>`;
+      el.onclick = () => {
+        state.voiceId = v.id;
+        for (const other of box.children) other.classList.toggle("on", other === el);
+        refresh();
+      };
+      el.querySelector(".play").onclick = (e) => {
+        e.stopPropagation();
+        // Один проигрыватель на всех: иначе голоса наложатся друг на друга.
+        window.__voicePlayer?.pause();
+        const audio = new Audio(v.preview);
+        window.__voicePlayer = audio;
+        audio.play().catch(() => { $("#sound-info").textContent = "Образец не проигрался."; });
+      };
+      return el;
+    }));
+    voicesLoaded = true;
+  } catch (err) {
+    $("#sound-info").textContent = `Список голосов не загрузился: ${err.message}`;
+  }
+}
+
+/** Прогоняет готовый ролик через дубляж или смену голоса. */
+function applySound() {
+  if (state.sound === "keep" || !state.swap) return;
+  const dub = state.sound === "dub";
+  if (!dub && !state.voiceId) {
+    $("#sound-info").textContent = "Выберите голос в списке.";
+    return;
+  }
+  return longStep($("#run-sound"), "#sound-info", "Обрабатываю…", async () => {
+    const payload = state.swapJobId
+      ? { jobId: state.swapJobId }
+      : { videoFile: state.swap.file };
+    const { jobId } = dub
+      ? await runDubbing({ ...payload, language: $("#dub-language").value })
+      : await runVoiceChange({ ...payload, voiceId: state.voiceId });
+    $("#sound-info").textContent = `Задание ${jobId.slice(0, 8)} в очереди…`;
+    loadLibrary();
+    const url = await waitForJob(jobId, {
+      onTick: (sec) => { $("#sound-info").textContent = `Считается, прошло ${sec} с.`; },
+    });
+    state.swapJobId = jobId;
+    await useSwapResult(await fetchAsFile(url, "sound.mp4"));
+    $("#sound-info").textContent = dub
+      ? "Дубляж применён: губы пересведены под речь."
+      : "Голос заменён.";
+    loadLibrary();
+  });
 }
 
 // --- библиотека --------------------------------------------------------------
@@ -575,6 +673,8 @@ function refresh() {
   $("#gen-bg").disabled = blocked;
   $("#run-swap").disabled = !(state.src && state.sheet) || blocked;
   $("#run-object").disabled = !(state.src && state.charFile) || blocked;
+  $("#run-sound").disabled = !state.swap || blocked
+    || (state.sound === "voice" && !state.voiceId);
   $("#assemble").disabled = !state.swap || state.busy;
 
   // Подсказка должна называть недостающее и вести к нему, а не перечислять
@@ -722,6 +822,10 @@ function wire() {
       previewComposite();
     }
   };
+  for (const b of document.querySelectorAll(".seg-sound")) {
+    b.onclick = () => setSound(b.dataset.sound);
+  }
+  $("#run-sound").onclick = applySound;
   $("#assemble").onclick = assemble;
 
   $("#lib-refresh").onclick = loadLibrary;

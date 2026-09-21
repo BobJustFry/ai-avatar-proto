@@ -60,8 +60,34 @@ export async function hfRecheck() {
 }
 
 /** Ставит задание в очередь; возвращает его id, не дожидаясь результата. */
-export async function makeSheet(file, { prompt, aspect = "9:16" } = {}) {
-  return post("/sheet", { image: await toBase64(file), name: file.name, prompt, aspect });
+export async function makeSheet(file, { prompt, aspect = "9:16", frameBlob } = {}) {
+  return post("/sheet", {
+    image: await toBase64(file),
+    // Кадр из исходника — чтобы лист сняли с того же расстояния и угла.
+    frame: frameBlob ? await toBase64(frameBlob) : undefined,
+    name: file.name,
+    prompt,
+    aspect,
+  });
+}
+
+/** Дубляж: пересводит губы под речь на выбранном языке. */
+export async function runDubbing({ jobId, videoFile, language = "rus" }) {
+  return post("/dub", {
+    jobId,
+    video: videoFile ? await toBase64(videoFile) : undefined,
+    language,
+  });
+}
+
+/** Смена голоса: звук другой, губы не трогаются. */
+export async function runVoiceChange({ jobId, videoFile, voiceId, voiceType = "preset" }) {
+  return post("/voice", {
+    jobId,
+    video: videoFile ? await toBase64(videoFile) : undefined,
+    voiceId,
+    voiceType,
+  });
 }
 
 export async function runSwap(sheetFile, videoFile, { resolution = "720p", backgroundSource = "input_video" } = {}) {
