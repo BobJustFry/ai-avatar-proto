@@ -81,12 +81,20 @@
     <li class="step only-character" data-step="3">
       <h2><span class="num">3</span> Фон <span class="opt">необязательно</span></h2>
       <div class="body">
-        <p class="lead">Чем заменить обстановку. Без выбора персонаж останется
-        на ровной заливке, и фон можно будет поставить позже.</p>
+        <p class="lead">Что сделать с обстановкой. Этот выбор влияет на саму
+        замену, а не только на сборку — поэтому он делается до неё.</p>
+        <div class="row">
+          <button id="bg-keep" class="primary">Оставить мою обстановку</button>
+        </div>
+        <p class="hint">Персонаж встанет в ваш кадр: комната, свет и предметы
+        останутся вашими.</p>
+        <div class="divider">или заменить</div>
         <div class="row">
           <button id="pick-bg">Выбрать фото фона</button>
           <button id="gen-bg">Сгенерировать фон</button>
-          <button id="no-bg" class="ghost">Без фона</button>
+        </div>
+        <div class="row">
+          <button id="no-bg" class="ghost">Ровная заливка, фон поставлю позже</button>
         </div>
         <input type="file" id="bg-file" accept="image/*,video/*" hidden>
         <textarea id="bg-prompt" rows="2" placeholder="Описание фона: пустая студия подкаста, мягкий тёплый свет слева" hidden></textarea>

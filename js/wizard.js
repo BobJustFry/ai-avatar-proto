@@ -27,6 +27,9 @@ const state = {
   tolerance: 0.1,
   busy: false,
   mode: "character", // character — персонаж и фон, object — предмет в кадре
+  // Что делаем с обстановкой: keep — оставить снятую, replace — подставить
+  // свою, plate — получить ровную заливку и решить потом.
+  bgMode: "keep",
 };
 
 // --- шаги --------------------------------------------------------------------
@@ -51,6 +54,7 @@ function setMode(mode) {
   // Фон относится только к персонажу: в режиме предмета сцена остаётся вашей.
   if (mode === "object") {
     state.bg = null;
+    state.bgMode = "keep";
     markDone(3, false);
   }
   refresh();
@@ -108,6 +112,13 @@ function previewComposite(note) {
   const [w, h] = outputSize();
   fitCanvas(w, h);
   ctx.clearRect(0, 0, w, h);
+  // Когда обстановка остаётся своей, вырезать нечего — показываем кадр как есть.
+  if (state.bgMode !== "replace" && state.swap?.el) {
+    drawCover(ctx, state.swap.el, w, h);
+    showEmpty(false);
+    if (note) $("#preview-info").textContent = note;
+    return;
+  }
   drawBackground(w, h);
   if (flatkey.ready) drawCover(ctx, flatkey.frame, w, h);
   showEmpty(false);
@@ -248,7 +259,8 @@ async function pickBackground(file) {
       const im = await loadImage(file);
       state.bg = { kind: "image", url: im.url, el: im.img };
     }
-    $("#bg-info").textContent = `Фон: ${file.name}`;
+    state.bgMode = "replace";
+    $("#bg-info").textContent = `Фон заменяется на «${file.name}».`;
     addThumb("#thumbs-bg", state.bg.url, "фон", () => previewComposite("Фон."));
     markDone(3);
     previewComposite("Фон выбран.");
@@ -299,7 +311,7 @@ async function assemble() {
     const blob = await processor.run({
       onFrame: (el) => {
         ctx.clearRect(0, 0, w, h);
-        if (state.mode === "object" || !state.bg) {
+        if (state.mode === "object" || state.bgMode !== "replace" || !state.bg) {
           // Без фона вырезать нечего: шахматка из превью не должна попасть
           // в файл, поэтому кадр идёт как есть — меняется только звук и формат.
           drawCover(ctx, el, w, h);
@@ -382,7 +394,8 @@ function generateBackground() {
     });
     const im = await loadImage(await fetchAsFile(url, "background.png"));
     state.bg = { kind: "image", url: im.url, el: im.img };
-    $("#bg-info").textContent = "Фон сгенерирован.";
+    state.bgMode = "replace";
+    $("#bg-info").textContent = "Фон сгенерирован и будет подставлен.";
     addThumb("#thumbs-bg", im.url, "фон", () => previewComposite("Фон."));
     markDone(3);
     previewComposite("Фон сгенерирован.");
@@ -392,7 +405,11 @@ function generateBackground() {
 function generateSwap() {
   return longStep($("#run-swap"), "#swap-info", "Заменяю…", async () => {
     const sheetFile = state.sheet.file ?? await fetchAsFile(state.sheet.url, "sheet.png");
-    const { jobId } = await runSwap(sheetFile, state.src.file, { resolution: $("#quality").value });
+    const { jobId } = await runSwap(sheetFile, state.src.file, {
+      resolution: $("#quality").value,
+      // Оставляем снятую сцену или получаем ровную заливку под подстановку.
+      backgroundSource: state.bgMode === "keep" ? "input_video" : "input_image",
+    });
     $("#swap-info").textContent = `Задание ${jobId.slice(0, 8)} в очереди…`;
     loadLibrary();
     const url = await waitForJob(jobId, {
@@ -670,11 +687,20 @@ function wire() {
 
   $("#pick-bg").onclick = () => $("#bg-file").click();
   $("#bg-file").onchange = (e) => e.target.files[0] && pickBackground(e.target.files[0]);
-  $("#no-bg").onclick = () => {
+  $("#bg-keep").onclick = () => {
+    state.bgMode = "keep";
     state.bg = null;
-    $("#bg-info").textContent = "Без фона: кадр останется как есть, заливка не вырезается.";
+    $("#bg-info").textContent = "Обстановка остаётся вашей: персонаж встанет в ваш кадр.";
     markDone(3);
-    previewComposite("Без фона.");
+    if (state.swap) previewComposite("Кадр из вашей сцены.");
+    refresh();
+  };
+  $("#no-bg").onclick = () => {
+    state.bgMode = "plate";
+    state.bg = null;
+    $("#bg-info").textContent = "Персонаж придёт на ровной заливке — фон подставите позже.";
+    markDone(3);
+    previewComposite("Ровная заливка.");
     refresh();
   };
   $("#gen-bg").onclick = generateBackground;

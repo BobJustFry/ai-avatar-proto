@@ -64,11 +64,12 @@ export async function makeSheet(file, { prompt, aspect = "9:16" } = {}) {
   return post("/sheet", { image: await toBase64(file), name: file.name, prompt, aspect });
 }
 
-export async function runSwap(sheetFile, videoFile, { resolution = "720p" } = {}) {
+export async function runSwap(sheetFile, videoFile, { resolution = "720p", backgroundSource = "input_video" } = {}) {
   return post("/swap", {
     image: await toBase64(sheetFile),
     video: await toBase64(videoFile),
     resolution,
+    backgroundSource,
   });
 }
 
