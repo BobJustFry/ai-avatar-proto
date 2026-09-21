@@ -36,6 +36,13 @@ export async function hfStatus() {
     if (!d.authOk) {
       return { ready: false, reason: "Ключ Higgsfield не принят — проверьте пару ID и секрет в .env." };
     }
+    if (d.trialBlocked) {
+      return {
+        ready: false,
+        reason: "Тариф Higgsfield не даёт приложению генерировать. Сделайте этот шаг "
+          + "снаружи и загрузите готовый файл кнопкой ниже.",
+      };
+    }
     return { ready: true, reason: "", credits: d.credits ?? "?" };
   } catch (err) {
     return { ready: false, reason: `Сервер недоступен (${err.message}). Запустите run.cmd.` };

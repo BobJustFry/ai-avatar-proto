@@ -167,6 +167,9 @@ function runCli(args, { timeout = 600_000 } = {}) {
       : [HF_BIN, args];
     const child = spawn(cmd, argv, {
       shell: !cliJs && process.platform === "win32",
+      // stdin закрываем: с открытым каналом CLI ждёт ввода, которого не будет,
+      // и процесс висит до таймаута, возвращая невнятный код null.
+      stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, HF_API_KEY_ID: HF_ID, HF_API_KEY_SECRET: HF_SECRET },
     });
     let out = "", err = "";
@@ -205,11 +208,16 @@ async function withTempFiles(files, fn) {
 }
 
 /** Ошибку CLI показываем как есть — она объясняет причину лучше наших догадок. */
+// Запоминаем отказ тарифа: второй раз гонять мегабайты ради того же ответа
+// бессмысленно, лучше предупредить до нажатия кнопки.
+let trialBlocked = false;
+
 function cliError(res) {
   const raw = (res.err || res.out || "").trim();
+  if (raw.match(/only_mcp_usage_on_trial_is_available|not_enough_credits/)) trialBlocked = true;
   const known = raw.match(/only_mcp_usage_on_trial_is_available/)
     ? "на пробном тарифе генерация доступна только через MCP — нужен платный план"
-    : raw.match(/not_enough_credits/) ? "не хватает кредитов" : null;
+    : raw.match(/not_enough_credits/) ? "кредитов на счёте API нет" : null;
   return known ?? (raw.split("\n")[0] || `CLI завершился с кодом ${res.code}`);
 }
 
@@ -227,7 +235,18 @@ async function handleHiggsfield(req, res, path) {
       );
       authOk = probe.code === 0;
     }
-    return json(res, 200, { cli: version.code === 0, configured, authOk, via: cliJs ? "node" : "shell" });
+    return json(res, 200, {
+      cli: version.code === 0, configured, authOk, trialBlocked,
+      via: cliJs ? "node" : "shell",
+    });
+  }
+
+  if (trialBlocked) {
+    return json(res, 503, {
+      error: "генерация через API недоступна на текущем тарифе Higgsfield — "
+        + "сделайте шаг снаружи и загрузите готовый файл",
+      trialBlocked: true,
+    });
   }
 
   const body = await readJson(req);
@@ -389,7 +408,14 @@ async function serveStatic(res, urlPath) {
     const info = await stat(file);
     const target = info.isDirectory() ? join(file, "index.html") : file;
     const data = await readFile(target);
-    res.writeHead(200, { "Content-Type": MIME[extname(target)] ?? "application/octet-stream" });
+    const type = MIME[extname(target)] ?? "application/octet-stream";
+    // Без этого Chrome эвристически кеширует html/css/js, и правки не видны,
+    // а страница выглядит сломанной по причинам недельной давности.
+    const noCache = /\.(?:html|css|js|mjs|json)$/i.test(target);
+    res.writeHead(200, {
+      "Content-Type": type,
+      ...(noCache ? { "Cache-Control": "no-store, must-revalidate" } : {}),
+    });
     res.end(data);
   } catch {
     res.writeHead(404).end("not found");

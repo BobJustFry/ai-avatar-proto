@@ -48,10 +48,25 @@ function wireSteps() {
 
 // --- превью ------------------------------------------------------------------
 
+let previewAr = 16 / 9;
+
+/** Вписывает кадр превью в колонку: по ширине и по высоте одновременно. */
+function fitPreview() {
+  const col = $("#preview");
+  const frame = $("#preview .frame");
+  const availW = col.clientWidth;
+  const availH = Math.max(220, Math.min(window.innerHeight - 200, 620));
+  if (!availW) return;
+  const width = Math.min(availW, availH * previewAr);
+  frame.style.width = `${Math.floor(width)}px`;
+  frame.style.height = `${Math.floor(width / previewAr)}px`;
+}
+
 function fitCanvas(w, h) {
   canvas.width = w;
   canvas.height = h;
-  $("#preview .frame").style.width = `${Math.min(w, 520)}px`;
+  previewAr = w / h;
+  fitPreview();
 }
 
 function showEmpty(on, text) {
@@ -352,12 +367,12 @@ function refresh() {
   $("#run-swap").disabled = !(state.src && state.sheet) || !hf.ready;
   $("#assemble").disabled = !state.swap || state.busy;
 
-  if (!state.swap) {
-    $("#assemble-info").textContent = "Нужен результат замены.";
-  }
-  if (state.src && state.sheet && !hf.ready) {
-    $("#swap-info").textContent = hf.reason;
-  }
+  if (!state.swap) $("#assemble-info").textContent = "Нужен результат замены.";
+  // Когда генерация недоступна, ручной путь должен быть на виду, а не мелким
+  // текстом под выключенной кнопкой.
+  const manual = !hf.ready;
+  $("#pick-swap").classList.toggle("primary", manual);
+  $("#use-as-sheet").classList.toggle("primary", manual);
 }
 
 // --- состояние доступа к Higgsfield ------------------------------------------
@@ -421,6 +436,8 @@ function wire() {
   $("#assemble").onclick = assemble;
 
   showEmpty(true, "Здесь появится кадр");
+  fitPreview();
+  new ResizeObserver(fitPreview).observe($("#preview"));
   refresh();
   checkHiggsfield();
 }
