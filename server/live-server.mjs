@@ -11,9 +11,11 @@
 // шлёт звук, а браузер только принимает видео из комнаты LiveKit.
 
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const ROOT = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const PORT = Number(process.env.PORT ?? 5173);
@@ -117,6 +119,167 @@ function speakPcm(ws, pcm) {
     send(ws, { type: "agent.speak", audio: pcm.subarray(i, i + CHUNK_BYTES).toString("base64") });
   }
   send(ws, { type: "agent.speak_end" });
+}
+
+// --- Higgsfield: замена персонажа --------------------------------------------
+//
+// Ходим через CLI, а не напрямую в REST: публичная спецификация перечисляет
+// лишь несколько эндпоинтов, а имена моделей вроде kling3_0_motion_control
+// живут в консоли. CLI их знает и сам занимается загрузкой файлов.
+
+const HF_ID = process.env.HIGGSFIELD_API_KEY_ID ?? "";
+const HF_SECRET = process.env.HIGGSFIELD_API_KEY_SECRET ?? "";
+const HF_BIN = process.env.HIGGSFIELD_BIN ?? "higgsfield";
+
+// Запускаем не .cmd-обёртку, а сам скрипт под текущим node. Причина: на Windows
+// spawn с shell:true склеивает аргументы через пробел без кавычек, и промпт
+// разваливается на позиционные аргументы.
+const CLI_CANDIDATES = [
+  process.env.HIGGSFIELD_CLI_JS,
+  process.env.APPDATA && join(process.env.APPDATA, "npm", "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js"),
+  process.env.HOME && join(process.env.HOME, ".npm-global", "lib", "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js"),
+  "/usr/local/lib/node_modules/@higgsfield/cli/bin/higgsfield.js",
+  "/usr/lib/node_modules/@higgsfield/cli/bin/higgsfield.js",
+].filter(Boolean);
+
+let cliJs = null;
+for (const candidate of CLI_CANDIDATES) {
+  try {
+    await stat(candidate);
+    cliJs = candidate;
+    break;
+  } catch { /* пробуем следующий */ }
+}
+
+const SHEET_PROMPT = [
+  "Redraw this character as a clean character reference.",
+  "Waist-up medium shot, facing the camera straight on, both arms relaxed, no props.",
+  "Keep the character's identity, colours, clothing and accessories exactly as in the reference.",
+  "Give it a clear, expressive mouth, closed and neutral.",
+  "Plain flat light-gray studio background, even soft lighting, no cast shadows.",
+  "No text, no logos, no watermarks, no borders. Centered composition.",
+].join(" ");
+
+function runCli(args, { timeout = 600_000 } = {}) {
+  return new Promise((resolve) => {
+    const [cmd, argv] = cliJs
+      ? [process.execPath, [cliJs, ...args]]
+      : [HF_BIN, args];
+    const child = spawn(cmd, argv, {
+      shell: !cliJs && process.platform === "win32",
+      env: { ...process.env, HF_API_KEY_ID: HF_ID, HF_API_KEY_SECRET: HF_SECRET },
+    });
+    let out = "", err = "";
+    child.stdout.on("data", (c) => { out += c; });
+    child.stderr.on("data", (c) => { err += c; });
+    const timer = setTimeout(() => child.kill(), timeout);
+    child.on("error", (e) => { clearTimeout(timer); resolve({ code: -1, out, err: e.message }); });
+    child.on("close", (code) => { clearTimeout(timer); resolve({ code, out, err }); });
+  });
+}
+
+/** Достаёт ссылку на результат из вывода CLI — она бывает и в JSON, и в тексте. */
+function resultUrl(out) {
+  try {
+    const j = JSON.parse(out);
+    const first = j?.results?.[0] ?? j;
+    const url = first?.result_url ?? first?.url ?? first?.results?.[0]?.url;
+    if (url) return url;
+  } catch { /* не JSON — ищем ссылку в тексте */ }
+  return out.match(/https?:\/\/\S+\.(?:png|jpg|jpeg|webp|mp4|webm)/i)?.[0] ?? null;
+}
+
+async function withTempFiles(files, fn) {
+  const dir = await mkdtemp(join(tmpdir(), "hf-"));
+  try {
+    const paths = {};
+    for (const [key, { base64, ext }] of Object.entries(files)) {
+      const path = join(dir, `${key}.${ext}`);
+      await writeFile(path, Buffer.from(base64, "base64"));
+      paths[key] = path;
+    }
+    return await fn(paths);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Ошибку CLI показываем как есть — она объясняет причину лучше наших догадок. */
+function cliError(res) {
+  const raw = (res.err || res.out || "").trim();
+  const known = raw.match(/only_mcp_usage_on_trial_is_available/)
+    ? "на пробном тарифе генерация доступна только через MCP — нужен платный план"
+    : raw.match(/not_enough_credits/) ? "не хватает кредитов" : null;
+  return known ?? (raw.split("\n")[0] || `CLI завершился с кодом ${res.code}`);
+}
+
+async function handleHiggsfield(req, res, path) {
+  if (path === "/api/hf/status" && req.method === "GET") {
+    const version = await runCli(["--version"], { timeout: 30_000 });
+    const configured = !!(HF_ID && HF_SECRET);
+    // Проверяем ключ тем же CLI, а не своим запросом: на машинах с TLS-перехватом
+    // fetch в Node отвергает подменённый сертификат, а CLI проходит.
+    let authOk = false;
+    if (configured && version.code === 0) {
+      const probe = await runCli(
+        ["generate", "cost", "nano_banana_pro", "--prompt", "probe"],
+        { timeout: 60_000 },
+      );
+      authOk = probe.code === 0;
+    }
+    return json(res, 200, { cli: version.code === 0, configured, authOk, via: cliJs ? "node" : "shell" });
+  }
+
+  const body = await readJson(req);
+
+  if (path === "/api/hf/sheet") {
+    if (!body.image) return json(res, 400, { error: "нет изображения" });
+    return withTempFiles({ ref: { base64: body.image, ext: "png" } }, async (p) => {
+      const r = await runCli([
+        "generate", "create", "nano_banana_pro",
+        "--prompt", body.prompt || SHEET_PROMPT,
+        "--aspect-ratio", body.aspect || "9:16",
+        "--resolution", "2k",
+        "--image", p.ref,
+        "--wait", "--wait-timeout", "5m", "--json",
+      ]);
+      const url = r.code === 0 ? resultUrl(r.out) : null;
+      return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+    });
+  }
+
+  if (path === "/api/hf/background") {
+    if (!body.prompt) return json(res, 400, { error: "нет описания фона" });
+    const r = await runCli([
+      "generate", "create", "nano_banana_pro",
+      "--prompt", `${body.prompt}. Empty scene, no people, no text.`,
+      "--aspect-ratio", body.aspect || "9:16",
+      "--resolution", "2k",
+      "--wait", "--wait-timeout", "5m", "--json",
+    ]);
+    const url = r.code === 0 ? resultUrl(r.out) : null;
+    return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+  }
+
+  if (path === "/api/hf/swap") {
+    if (!body.image || !body.video) return json(res, 400, { error: "нужны лист персонажа и видео" });
+    return withTempFiles(
+      { sheet: { base64: body.image, ext: "png" }, src: { base64: body.video, ext: "mp4" } },
+      async (p) => {
+        const r = await runCli([
+          "generate", "workflow", "kling3_0_motion_control",
+          "--image-references", p.sheet,
+          "--video-references", p.src,
+          "--mode", body.resolution === "1080p" ? "pro" : "std",
+          "--wait", "--wait-timeout", "15m", "--json",
+        ], { timeout: 900_000 });
+        const url = r.code === 0 ? resultUrl(r.out) : null;
+        return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+      },
+    );
+  }
+
+  return json(res, 404, { error: "неизвестный метод" });
 }
 
 // --- API лайв-режима ---------------------------------------------------------
@@ -236,6 +399,7 @@ async function serveStatic(res, urlPath) {
 createServer(async (req, res) => {
   const path = new URL(req.url, "http://localhost").pathname;
   try {
+    if (path.startsWith("/api/hf")) return await handleHiggsfield(req, res, path);
     if (path.startsWith("/api/live")) return await handleApi(req, res, path);
     await serveStatic(res, path);
   } catch (err) {
@@ -247,6 +411,9 @@ createServer(async (req, res) => {
   console.log(API_KEY
     ? "LIVEAVATAR_API_KEY найден — лайв-режим с провайдером доступен"
     : "LIVEAVATAR_API_KEY не задан — работает всё, кроме провайдерского аватара");
+  console.log(HF_ID && HF_SECRET
+    ? "HIGGSFIELD_API_KEY найден — мастер может генерировать сам"
+    : "HIGGSFIELD_API_KEY не задан — шаги генерации в мастере недоступны");
   console.log(TTS_KEY
     ? "ELEVENLABS_API_KEY найден — доступен режим «Синтез голоса»"
     : "ELEVENLABS_API_KEY не задан — из голосовых режимов работает только «Мой голос»");

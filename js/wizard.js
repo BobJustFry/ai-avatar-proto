@@ -1,0 +1,429 @@
+// Мастер: пять шагов от исходной записи до готового ролика.
+//
+// Локальные шаги (выбор файлов, ключ, фон, сведение со звуком) работают сразу.
+// Два шага считаются на стороне Higgsfield — чистовой лист персонажа и сама
+// замена. Пока приложение не имеет доступа к API, для них есть ручной мост:
+// сделать снаружи и загрузить готовый файл кнопкой.
+
+import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
+import { FlatKey } from "./flatkey.js";
+import { drawCover } from "./scene.js";
+import { hfStatus, makeSheet, makeBackground, runSwap } from "./hf.js";
+
+const $ = (s) => document.querySelector(s);
+const canvas = $("#out");
+const ctx = canvas.getContext("2d");
+
+const processor = new VideoProcessor(canvas);
+const flatkey = new FlatKey();
+
+const state = {
+  src: null,        // { file, url, el, duration, w, h }
+  charFile: null,   // фото персонажа «как есть»
+  sheet: null,      // { url, img } — чистовой лист
+  bg: null,         // { kind: 'image'|'video'|'none', url, el }
+  swap: null,       // { file, url, el, w, h } — результат замены
+  format: "auto",
+  tolerance: 0.1,
+  busy: false,
+};
+
+// --- шаги --------------------------------------------------------------------
+
+function openStep(n) {
+  for (const li of document.querySelectorAll(".step")) {
+    li.classList.toggle("open", Number(li.dataset.step) === n);
+  }
+  $("#status").textContent = `шаг ${n} из 5`;
+}
+
+const markDone = (n, done = true) =>
+  document.querySelector(`.step[data-step="${n}"]`)?.classList.toggle("done", done);
+
+function wireSteps() {
+  for (const h of document.querySelectorAll(".step h2")) {
+    h.onclick = () => openStep(Number(h.parentElement.dataset.step));
+  }
+}
+
+// --- превью ------------------------------------------------------------------
+
+function fitCanvas(w, h) {
+  canvas.width = w;
+  canvas.height = h;
+  $("#preview .frame").style.width = `${Math.min(w, 520)}px`;
+}
+
+function showEmpty(on, text) {
+  const el = $("#empty");
+  el.hidden = !on;
+  if (text) el.textContent = text;
+}
+
+/** Рисует что-нибудь одно во весь кадр — для промежуточных превью. */
+function previewSource(source, note) {
+  const w = source.videoWidth || source.naturalWidth;
+  const h = source.videoHeight || source.naturalHeight;
+  if (!w || !h) return;
+  fitCanvas(w, h);
+  ctx.clearRect(0, 0, w, h);
+  drawCover(ctx, source, w, h);
+  showEmpty(false);
+  if (note) $("#preview-info").textContent = note;
+}
+
+/** Композит: фон, поверх — персонаж с вырезанной заливкой. */
+function previewComposite(note) {
+  const [w, h] = outputSize();
+  fitCanvas(w, h);
+  ctx.clearRect(0, 0, w, h);
+  drawBackground(w, h);
+  if (flatkey.ready) drawCover(ctx, flatkey.frame, w, h);
+  showEmpty(false);
+  if (note) $("#preview-info").textContent = note;
+}
+
+function drawBackground(w, h) {
+  const bg = state.bg;
+  if (bg?.el && (bg.el.readyState >= 2 || bg.el.complete)) {
+    drawCover(ctx, bg.el, w, h);
+  } else {
+    // «без фона» — шахматка, чтобы прозрачность была видна
+    const s = 24;
+    for (let y = 0; y < h; y += s) {
+      for (let x = 0; x < w; x += s) {
+        ctx.fillStyle = ((x / s + y / s) % 2) ? "#1a1f27" : "#141920";
+        ctx.fillRect(x, y, s, s);
+      }
+    }
+  }
+}
+
+/** Размер выходного кадра: явный или унаследованный от результата замены. */
+function outputSize() {
+  if (state.format !== "auto") return state.format.split("x").map(Number);
+  const el = state.swap?.el ?? state.src?.el;
+  return el ? [el.videoWidth, el.videoHeight] : [1280, 720];
+}
+
+// --- загрузка файлов ---------------------------------------------------------
+
+function loadVideo(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement("video");
+    Object.assign(el, { src: url, muted: true, playsInline: true, preload: "auto" });
+    el.onloadeddata = () => resolve({ file, url, el, duration: el.duration, w: el.videoWidth, h: el.videoHeight });
+    el.onerror = () => reject(new Error("не удалось прочитать видео"));
+  });
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ file, url, img });
+    img.onerror = () => reject(new Error("не удалось прочитать изображение"));
+    img.src = url;
+  });
+}
+
+/** Кадр из видео в заданной секунде — для превью и калибровки ключа. */
+async function seekTo(el, time) {
+  if (Math.abs(el.currentTime - time) < 0.05) return;
+  await new Promise((resolve) => {
+    const done = () => { el.removeEventListener("seeked", done); resolve(); };
+    el.addEventListener("seeked", done);
+    el.currentTime = time;
+    setTimeout(done, 1500);
+  });
+}
+
+// --- шаг 1: исходник ---------------------------------------------------------
+
+async function pickSource(file) {
+  try {
+    state.src = await loadVideo(file);
+    const { duration, w, h } = state.src;
+    $("#src-info").textContent = `${file.name} · ${duration.toFixed(1)} с · ${w}×${h}`;
+    await seekTo(state.src.el, Math.min(1, duration / 3));
+    previewSource(state.src.el, "Кадр исходника.");
+    markDone(1);
+    refresh();
+    openStep(2);
+  } catch (err) {
+    $("#src-info").textContent = `Не открылось: ${err.message}`;
+  }
+}
+
+// --- шаг 2: персонаж ---------------------------------------------------------
+
+async function pickCharacter(file) {
+  try {
+    const { url, img } = await loadImage(file);
+    state.charFile = { file, url, img };
+    $("#char-info").textContent = `${file.name} · ${img.naturalWidth}×${img.naturalHeight}`;
+    previewSource(img, "Фото персонажа. Для генерации из него делается чистовой лист.");
+    refresh();
+  } catch (err) {
+    $("#char-info").textContent = `Не открылось: ${err.message}`;
+  }
+}
+
+function setSheet(entry, note) {
+  state.sheet = entry;
+  $("#sheet-info").textContent = note;
+  previewSource(entry.img, "Чистовой лист персонажа.");
+  markDone(2);
+  refresh();
+}
+
+// --- шаг 3: фон --------------------------------------------------------------
+
+async function pickBackground(file) {
+  try {
+    if (file.type.startsWith("video/")) {
+      const v = await loadVideo(file);
+      v.el.loop = true;
+      await v.el.play().catch(() => {});
+      state.bg = { kind: "video", url: v.url, el: v.el };
+    } else {
+      const im = await loadImage(file);
+      state.bg = { kind: "image", url: im.url, el: im.img };
+    }
+    $("#bg-info").textContent = `Фон: ${file.name}`;
+    markDone(3);
+    previewComposite("Фон выбран.");
+    refresh();
+  } catch (err) {
+    $("#bg-info").textContent = `Не открылось: ${err.message}`;
+  }
+}
+
+// --- шаг 4: замена -----------------------------------------------------------
+
+async function useSwapResult(file) {
+  try {
+    state.swap = await loadVideo(file);
+    const { duration, w, h } = state.swap;
+    $("#swap-info").textContent = `Результат: ${duration.toFixed(1)} с · ${w}×${h}`;
+    await seekTo(state.swap.el, Math.min(1, duration / 3));
+    flatkey.bg = null;
+    flatkey.update(state.swap.el, { tolerance: state.tolerance });
+    markDone(4);
+    previewComposite("Так будет выглядеть сборка.");
+    refresh();
+    openStep(5);
+  } catch (err) {
+    $("#swap-info").textContent = `Не открылось: ${err.message}`;
+  }
+}
+
+// --- шаг 5: сборка -----------------------------------------------------------
+
+async function assemble() {
+  if (!state.swap || state.busy) return;
+  state.busy = true;
+  const btn = $("#assemble");
+  btn.disabled = true;
+  btn.textContent = "Собираю…";
+  $("#progress").hidden = false;
+
+  try {
+    await processor.open(state.swap.file);
+    await processor.openAudio(state.src ? state.src.file : null);
+    const [w, h] = outputSize();
+    fitCanvas(w, h);
+    flatkey.bg = null;
+
+    const blob = await processor.run({
+      onFrame: (el) => {
+        ctx.clearRect(0, 0, w, h);
+        if (!state.bg) {
+          // Без фона вырезать нечего: шахматка из превью не должна попасть
+          // в файл, поэтому кадр идёт как есть — меняется только звук и формат.
+          drawCover(ctx, el, w, h);
+          return;
+        }
+        flatkey.update(el, { tolerance: state.tolerance });
+        drawBackground(w, h);
+        drawCover(ctx, flatkey.frame, w, h);
+      },
+      onProgress: (p) => { $("#bar").style.width = `${(p * 100).toFixed(1)}%`; },
+    });
+    downloadBlob(blob, `avatar-${stamp()}.webm`);
+    $("#assemble-info").textContent = `Готово: ${(blob.size / 1e6).toFixed(1)} МБ, файл в загрузках.`;
+    markDone(5);
+  } catch (err) {
+    console.error(err);
+    $("#assemble-info").textContent = `Ошибка: ${err.message}`;
+  } finally {
+    state.busy = false;
+    btn.disabled = false;
+    btn.textContent = "Собрать ролик";
+    $("#progress").hidden = true;
+    $("#bar").style.width = "0%";
+  }
+}
+
+// --- шаги, которые считает Higgsfield ----------------------------------------
+
+/** Скачивает результат генерации к себе, чтобы дальше работать с файлом. */
+async function fetchAsFile(url, name) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`не удалось забрать результат (${res.status})`);
+  const blob = await res.blob();
+  return new File([blob], name, { type: blob.type });
+}
+
+/** Обёртка для долгих шагов: блокировка кнопки и честный текст ошибки. */
+async function longStep(btn, info, label, fn) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try {
+    await fn();
+  } catch (err) {
+    console.error(err);
+    $(info).textContent = err.message;
+  } finally {
+    btn.textContent = was;
+    refresh();
+  }
+}
+
+function generateSheet() {
+  return longStep($("#make-sheet"), "#sheet-info", "Рисую…", async () => {
+    $("#sheet-info").textContent = "Генерация идёт, обычно меньше минуты…";
+    const { url } = await makeSheet(state.charFile.file, { aspect: sheetAspect() });
+    const file = await fetchAsFile(url, "sheet.png");
+    const entry = await loadImage(file);
+    setSheet(entry, "Чистовой лист готов.");
+  });
+}
+
+function generateBackground() {
+  const prompt = $("#bg-prompt").value.trim();
+  if (!prompt) {
+    $("#bg-prompt").hidden = false;
+    $("#bg-info").textContent = "Опишите фон словами и нажмите ещё раз.";
+    return;
+  }
+  return longStep($("#gen-bg"), "#bg-info", "Рисую…", async () => {
+    $("#bg-info").textContent = "Генерация фона…";
+    const { url } = await makeBackground(prompt, { aspect: sheetAspect() });
+    const file = await fetchAsFile(url, "background.png");
+    const im = await loadImage(file);
+    state.bg = { kind: "image", url: im.url, el: im.img };
+    $("#bg-info").textContent = "Фон сгенерирован.";
+    markDone(3);
+    previewComposite("Фон сгенерирован.");
+  });
+}
+
+function generateSwap() {
+  return longStep($("#run-swap"), "#swap-info", "Заменяю…", async () => {
+    $("#swap-info").textContent = "Замена считается, это до двух минут…";
+    const sheetFile = state.sheet.file ?? await fetchAsFile(state.sheet.url, "sheet.png");
+    const { url } = await runSwap(sheetFile, state.src.file, { resolution: $("#quality").value });
+    const file = await fetchAsFile(url, "swap.mp4");
+    await useSwapResult(file);
+  });
+}
+
+/** Пропорция листа берётся от исходника — персонаж должен лечь в тот же кадр. */
+function sheetAspect() {
+  const el = state.src?.el;
+  if (!el?.videoWidth) return "9:16";
+  const r = el.videoWidth / el.videoHeight;
+  if (r > 1.5) return "16:9";
+  if (r > 1.15) return "4:3";
+  if (r > 0.9) return "1:1";
+  if (r > 0.72) return "3:4";
+  return "9:16";
+}
+
+// --- доступность кнопок ------------------------------------------------------
+
+function refresh() {
+  $("#make-sheet").disabled = !state.charFile || !hf.ready;
+  $("#use-as-sheet").disabled = !state.charFile;
+  $("#gen-bg").disabled = !hf.ready;
+  $("#run-swap").disabled = !(state.src && state.sheet) || !hf.ready;
+  $("#assemble").disabled = !state.swap || state.busy;
+
+  if (!state.swap) {
+    $("#assemble-info").textContent = "Нужен результат замены.";
+  }
+  if (state.src && state.sheet && !hf.ready) {
+    $("#swap-info").textContent = hf.reason;
+  }
+}
+
+// --- состояние доступа к Higgsfield ------------------------------------------
+
+const hf = { ready: false, reason: "Проверяю доступ к Higgsfield…" };
+
+async function checkHiggsfield() {
+  const res = await hfStatus();
+  hf.ready = res.ready;
+  hf.reason = res.reason;
+  const note = res.ready
+    ? `Higgsfield подключён, кредитов: ${res.credits}.`
+    : res.reason;
+  $("#sheet-info").textContent = state.sheet ? $("#sheet-info").textContent : note;
+  $("#swap-info").textContent = note;
+  $("#bg-info").textContent = state.bg ? $("#bg-info").textContent : "Фон не выбран.";
+  refresh();
+}
+
+// --- сборка интерфейса -------------------------------------------------------
+
+function wire() {
+  wireSteps();
+
+  $("#pick-src").onclick = () => $("#src-file").click();
+  $("#src-file").onchange = (e) => e.target.files[0] && pickSource(e.target.files[0]);
+
+  $("#pick-char").onclick = () => $("#char-file").click();
+  $("#char-file").onchange = (e) => e.target.files[0] && pickCharacter(e.target.files[0]);
+  $("#use-as-sheet").onclick = () =>
+    state.charFile && setSheet(state.charFile, `Как чистовой лист взято «${state.charFile.file.name}».`);
+
+  $("#pick-bg").onclick = () => $("#bg-file").click();
+  $("#bg-file").onchange = (e) => e.target.files[0] && pickBackground(e.target.files[0]);
+  $("#no-bg").onclick = () => {
+    state.bg = null;
+    $("#bg-info").textContent = "Без фона: кадр останется как есть, заливка не вырезается.";
+    markDone(3);
+    previewComposite("Без фона.");
+    refresh();
+  };
+  $("#gen-bg").onclick = generateBackground;
+  $("#make-sheet").onclick = generateSheet;
+  $("#run-swap").onclick = generateSwap;
+
+  $("#pick-swap").onclick = () => $("#swap-file").click();
+  $("#swap-file").onchange = (e) => e.target.files[0] && useSwapResult(e.target.files[0]);
+
+  $("#format").onchange = (e) => {
+    state.format = e.target.value;
+    if (state.swap) previewComposite();
+  };
+  $("#tolerance").oninput = (e) => {
+    state.tolerance = Number(e.target.value);
+    $("#tol-value").textContent = state.tolerance.toFixed(2);
+    if (flatkey.ready) {
+      flatkey.reapply({ tolerance: state.tolerance });
+      previewComposite();
+    }
+  };
+  $("#assemble").onclick = assemble;
+
+  showEmpty(true, "Здесь появится кадр");
+  refresh();
+  checkHiggsfield();
+}
+
+wire();
+window.__wizard = { state, flatkey, processor, previewComposite };

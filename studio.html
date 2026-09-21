@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Интерактивный ИИ аватар</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header id="top">
+  <h1>ИИ аватар</h1>
+  <div id="hud">
+    <span id="fps">—</span>
+    <span id="face">нет лица</span>
+    <span id="live-badge" hidden>● эфир</span>
+  </div>
+</header>
+
+<main id="stage">
+  <div class="frame">
+  <canvas id="out" width="1280" height="720"></canvas>
+  <video id="cam" playsinline muted></video>
+  <div id="boot">
+    <p id="boot-msg">Загружаю модели MediaPipe…</p>
+    <div class="boot-actions">
+      <button id="boot-btn" class="primary" hidden>Включить камеру</button>
+      <button id="boot-file" class="ghost" hidden>Работать с файлом без камеры</button>
+    </div>
+  </div>
+  <div id="toast" hidden></div>
+  </div>
+</main>
+
+<nav id="toolbar">
+  <div class="group" role="group" aria-label="Источник кадра">
+    <button class="seg on" data-mode="avatar">Аватар</button>
+    <button class="seg" data-mode="cutout">Я на фоне</button>
+    <button class="seg" data-mode="key">Ключ</button>
+  </div>
+
+  <div class="group">
+    <select id="scene" aria-label="Сцена"></select>
+  </div>
+
+  <div class="group">
+    <button id="rec" title="Записать происходящее на канвасе">● Запись</button>
+    <button id="shot" title="Сохранить кадр">Снимок</button>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="group">
+    <button data-open="dlg-video">Видео → видео</button>
+    <button data-open="dlg-live">Эфир</button>
+    <button data-open="dlg-settings">Настройки</button>
+  </div>
+</nav>
+
+<!-- ─────────────── Видео → видео ─────────────── -->
+<dialog id="dlg-video">
+  <form method="dialog" class="dlg-head">
+    <h2>Видео → видео</h2>
+    <button class="x" value="close" aria-label="Закрыть">✕</button>
+  </form>
+  <div class="dlg-body">
+    <p class="lead">Запись превращается в ролик с аватаром и новым фоном. Голос из
+    исходника переносится без изменений.</p>
+
+    <section>
+      <h3>Исходник</h3>
+      <div class="row">
+        <button id="rec-src">● Записать с камеры</button>
+        <button id="pick-file">Открыть файл</button>
+      </div>
+      <input type="file" id="file" accept="video/*" hidden>
+      <p class="hint" id="src-info">Исходник не выбран.</p>
+    </section>
+
+    <section>
+      <h3>Звук</h3>
+      <div class="row">
+        <button id="pick-audio">Взять звук из другого файла</button>
+        <button id="drop-audio" hidden>Убрать</button>
+      </div>
+      <input type="file" id="audio-file" accept="video/*,audio/*" hidden>
+      <p class="hint" id="audio-info">Звук берётся из самого исходника. Для собранного
+      ролика подставьте сюда вашу исходную запись — речь возьмётся из неё.</p>
+    </section>
+
+    <section>
+      <h3>Обработка</h3>
+      <div id="progress" hidden><div id="bar"></div></div>
+      <p class="hint" id="proc-hint">Идёт в реальном времени: минута ролика — минута
+      работы. Уходить на другую вкладку можно: конвейер замирает целиком и
+      продолжает с того же места.</p>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <button class="primary" id="process" disabled>Обработать в аватара</button>
+  </div>
+</dialog>
+
+<!-- ─────────────── Эфир ─────────────── -->
+<dialog id="dlg-live">
+  <form method="dialog" class="dlg-head">
+    <h2>Эфир</h2>
+    <button class="x" value="close" aria-label="Закрыть">✕</button>
+  </form>
+  <div class="dlg-body">
+
+    <section>
+      <h3>Кто в кадре</h3>
+      <label class="chk"><input type="checkbox" id="use-provider"> Фотореалистичный аватар провайдера</label>
+      <select id="avatar-id" hidden aria-label="Аватар провайдера"></select>
+      <p class="hint" id="provider-hint">Локальный риг ведётся вашим лицом и бесплатен.
+      Провайдер ведётся голосом: фотореализм, но мимика генерируется моделью, а не
+      снимается с вас.</p>
+    </section>
+
+    <section>
+      <h3>Чем говорит</h3>
+      <div class="row">
+        <button class="seg-voice on" data-voice="mic">Мой голос</button>
+        <button class="seg-voice" data-voice="tts">Синтез голоса</button>
+      </div>
+      <select id="voice-id" hidden aria-label="Голос синтеза"></select>
+      <textarea id="say-text" rows="2" placeholder="Что сказать аватару" hidden></textarea>
+      <div class="row" id="say-row" hidden><button id="say">Сказать</button></div>
+    </section>
+
+    <section>
+      <h3>Куда отдавать</h3>
+      <input id="whip-url" placeholder="WHIP URL, например https://…/whip">
+      <input id="whip-token" type="password" placeholder="Bearer-токен, если требуется">
+      <p class="hint" id="live-hint">Без WHIP картинку можно забрать в OBS: Browser
+      Source на этот адрес. Для Twitch, YouTube и VK нужен именно OBS — браузер
+      RTMP не умеет.</p>
+    </section>
+
+  </div>
+  <div class="dlg-foot">
+    <button class="primary" id="go-live">В эфир</button>
+  </div>
+</dialog>
+
+<!-- ─────────────── Настройки ─────────────── -->
+<dialog id="dlg-settings">
+  <form method="dialog" class="dlg-head">
+    <h2>Настройки</h2>
+    <button class="x" value="close" aria-label="Закрыть">✕</button>
+  </form>
+  <div class="dlg-body">
+
+    <section>
+      <h3>Поза</h3>
+      <div class="row">
+        <button id="calib">Калибровать позу</button>
+      </div>
+      <p class="hint">Смотрите прямо в камеру и нажмите — текущая поза станет
+      нейтральной. Для файла нейтраль берётся сама, по первым секундам записи.</p>
+      <label class="chk"><input type="checkbox" id="parallax" checked> Параллакс фона по голове</label>
+    </section>
+
+    <section>
+      <h3>Формат кадра</h3>
+      <select id="format" aria-label="Формат кадра">
+        <option value="1280x720">16:9 — горизонтальный, 1280×720</option>
+        <option value="720x1280">9:16 — вертикальный, 720×1280</option>
+        <option value="1080x1080">1:1 — квадрат, 1080×1080</option>
+        <option value="1440x1080">4:3 — горизонтальный, 1440×1080</option>
+        <option value="1080x1440">3:4 — вертикальный, 1080×1440</option>
+      </select>
+      <p class="hint">Ставьте под исходник: вертикальное видео в горизонтальном
+      кадре обрежется по краям.</p>
+    </section>
+
+    <section>
+      <h3>Ключ по фону</h3>
+      <label class="range">Допуск <output id="tol-value">0.10</output>
+        <input type="range" id="tolerance" min="0.04" max="0.40" step="0.01" value="0.10">
+      </label>
+      <p class="hint">Больше — чище вырезается фон, но начинают пропадать светлые
+      места персонажа. Меньше — по краям остаётся кайма. Подбирайте по картинке.</p>
+    </section>
+
+    <section>
+      <h3>Сегментация</h3>
+      <label class="chk"><input type="checkbox" id="invert-mask"> Инвертировать маску</label>
+      <p class="hint">Если вместо человека вырезается фон — включите.</p>
+    </section>
+
+    <section>
+      <h3>Аватар</h3>
+      <div class="row">
+        <button id="reload-rig">Перезагрузить слои</button>
+      </div>
+      <p class="hint" id="asset-msg">—</p>
+      <p class="hint">Слои кладутся в <code>assets/layers/</code>. Пока их нет,
+      персонаж рисуется кодом.</p>
+    </section>
+
+    <section>
+      <h3>Отладка</h3>
+      <label class="chk"><input type="checkbox" id="debug"> Сетка лица и блендшейпы</label>
+      <p class="hint">Показывает сырые значения поверх кадра — по ним удобно
+      подгонять константы позы.</p>
+    </section>
+
+  </div>
+</dialog>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
