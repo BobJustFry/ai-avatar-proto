@@ -36,6 +36,7 @@
   <div class="group" role="group" aria-label="Источник кадра">
     <button class="seg on" data-mode="avatar">Аватар</button>
     <button class="seg" data-mode="cutout">Я на фоне</button>
+    <button class="seg" data-mode="key">Ключ</button>
   </div>
 
   <div class="group">
@@ -74,6 +75,17 @@
       </div>
       <input type="file" id="file" accept="video/*" hidden>
       <p class="hint" id="src-info">Исходник не выбран.</p>
+    </section>
+
+    <section>
+      <h3>Звук</h3>
+      <div class="row">
+        <button id="pick-audio">Взять звук из другого файла</button>
+        <button id="drop-audio" hidden>Убрать</button>
+      </div>
+      <input type="file" id="audio-file" accept="video/*,audio/*" hidden>
+      <p class="hint" id="audio-info">Звук берётся из самого исходника. Для собранного
+      ролика подставьте сюда вашу исходную запись — речь возьмётся из неё.</p>
     </section>
 
     <section>
@@ -148,6 +160,28 @@
       <p class="hint">Смотрите прямо в камеру и нажмите — текущая поза станет
       нейтральной. Для файла нейтраль берётся сама, по первым секундам записи.</p>
       <label class="chk"><input type="checkbox" id="parallax" checked> Параллакс фона по голове</label>
+    </section>
+
+    <section>
+      <h3>Формат кадра</h3>
+      <select id="format" aria-label="Формат кадра">
+        <option value="1280x720">16:9 — горизонтальный, 1280×720</option>
+        <option value="720x1280">9:16 — вертикальный, 720×1280</option>
+        <option value="1080x1080">1:1 — квадрат, 1080×1080</option>
+        <option value="1440x1080">4:3 — горизонтальный, 1440×1080</option>
+        <option value="1080x1440">3:4 — вертикальный, 1080×1440</option>
+      </select>
+      <p class="hint">Ставьте под исходник: вертикальное видео в горизонтальном
+      кадре обрежется по краям.</p>
+    </section>
+
+    <section>
+      <h3>Ключ по фону</h3>
+      <label class="range">Допуск <output id="tol-value">0.10</output>
+        <input type="range" id="tolerance" min="0.04" max="0.40" step="0.01" value="0.10">
+      </label>
+      <p class="hint">Больше — чище вырезается фон, но начинают пропадать светлые
+      места персонажа. Меньше — по краям остаётся кайма. Подбирайте по картинке.</p>
     </section>
 
     <section>

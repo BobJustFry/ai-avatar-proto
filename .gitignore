@@ -4,3 +4,6 @@ Thumbs.db
 *.webm
 *.log
 .env
+assets/source/
+assets/out/
+Project's/

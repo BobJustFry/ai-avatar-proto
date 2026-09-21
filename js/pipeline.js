@@ -57,6 +57,24 @@ export class VideoProcessor {
     this.audioCtx = null;
     this.audioSrc = null;
     this.cancelled = false;
+    // Отдельный источник звука: картинку даёт результат замены, речь — исходник.
+    this.audioEl = null;
+    this.audioUrl = null;
+  }
+
+  /** Подключает звук из другого файла. Без него звук берётся из основного видео. */
+  async openAudio(fileOrBlob) {
+    if (this.audioUrl) URL.revokeObjectURL(this.audioUrl);
+    if (!fileOrBlob) { this.audioEl = null; this.audioUrl = null; return null; }
+    this.audioUrl = URL.createObjectURL(fileOrBlob);
+    const el = document.createElement("video");
+    Object.assign(el, { playsInline: true, preload: "auto", src: this.audioUrl });
+    await new Promise((resolve, reject) => {
+      el.onloadedmetadata = resolve;
+      el.onerror = () => reject(new Error("не удалось прочитать файл со звуком"));
+    });
+    this.audioEl = el;
+    return { duration: el.duration };
   }
 
   /** Загружает источник и возвращает его метаданные. */
@@ -97,10 +115,13 @@ export class VideoProcessor {
     const stream = this.canvas.captureStream(fps);
     // Звук тянем через WebAudio: элемент при этом молчит в колонках,
     // но дорожка в записи остаётся полноценной.
+    const soundEl = this.audioEl ?? v;
+    if (this.audioEl) this.audioEl.currentTime = 0;
     try {
       this.audioCtx ??= new AudioContext();
       if (this.audioCtx.state === "suspended") await this.audioCtx.resume();
-      this.audioSrc ??= this.audioCtx.createMediaElementSource(v);
+      // createMediaElementSource можно звать по разу на элемент, поэтому кешируем.
+      this.audioSrc ??= this.audioCtx.createMediaElementSource(soundEl);
       const dest = this.audioCtx.createMediaStreamDestination();
       this.audioSrc.connect(dest);
       for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
@@ -117,7 +138,20 @@ export class VideoProcessor {
     });
 
     rec.start(250);
-    await v.play();
+    // Результат замены приходит без звука, а немое видео браузер останавливает
+    // в фоновой вкладке ради энергосбережения. Сообщаем это человеческим языком,
+    // вместо того чтобы падать с AbortError.
+    try {
+      await v.play();
+    } catch (err) {
+      rec.stop();
+      throw new Error(
+        err.name === "AbortError"
+          ? "браузер остановил воспроизведение — вкладка должна оставаться видимой"
+          : `не удалось запустить исходник: ${err.message}`,
+      );
+    }
+    if (this.audioEl) await this.audioEl.play().catch(() => {});
 
     // В скрытой вкладке requestAnimationFrame замирает, а запись — нет:
     // без этого звук уехал бы относительно картинки. Замираем целиком.
@@ -128,12 +162,14 @@ export class VideoProcessor {
       if (document.hidden) {
         hiddenPause = true;
         v.pause();
+        this.audioEl?.pause();
         if (rec.state === "recording") rec.pause();
       } else if (hiddenPause) {
         hiddenPause = false;
         if (rec.state === "paused") rec.resume();
         last = performance.now();
         v.play().catch(() => {});
+        this.audioEl?.play().catch(() => {});
         schedule(step);
       }
     };
@@ -154,6 +190,7 @@ export class VideoProcessor {
     });
     document.removeEventListener("visibilitychange", onVisibility);
 
+    this.audioEl?.pause();
     // Хвост: даём рекордеру дописать последние кадры.
     await new Promise((r) => setTimeout(r, 200));
     rec.stop();

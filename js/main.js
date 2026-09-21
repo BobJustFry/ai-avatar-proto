@@ -6,6 +6,7 @@ import { FaceSignals } from "./signals.js";
 import { Rig } from "./rig.js";
 import { Scenes, drawCover } from "./scene.js";
 import { Cutout } from "./cutout.js";
+import { FlatKey } from "./flatkey.js";
 import { Recorder } from "./recorder.js";
 import { SourceRecorder, VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { WhipPublisher } from "./live.js";
@@ -21,6 +22,7 @@ const state = {
   parallax: true,
   debug: false,
   invertMask: false,
+  keyTolerance: 0.10,
   running: false,   // крутится ли живое превью
   busy: false,      // идёт обработка файла
   hasCamera: false,
@@ -32,6 +34,7 @@ const signals = new FaceSignals();
 const rig = new Rig();
 const scenes = new Scenes();
 const cutout = new Cutout();
+const flatkey = new FlatKey();
 const recorder = new Recorder(canvas);
 const srcRec = new SourceRecorder();
 const processor = new VideoProcessor(canvas);
@@ -57,6 +60,7 @@ async function boot() {
     const list = await scenes.load();
     $("#scene").innerHTML = list.map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
     reportAssets(await rig.load());
+    fitFrame();
     msg.textContent = "Готово. Всё считается локально — ни видео, ни звук никуда не уходят.";
     $("#boot-btn").hidden = false;
     $("#boot-btn").onclick = startCamera;
@@ -97,6 +101,32 @@ function startLoop() {
   requestAnimationFrame(frame);
 }
 
+/** Вписывает кадр в сцену целиком, сохраняя пропорцию холста. */
+function fitFrame() {
+  const stage = $("#stage");
+  const frame = document.querySelector(".frame");
+  const cs = getComputedStyle(stage);
+  const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (availW <= 0 || availH <= 0) return;
+  const ar = canvas.width / canvas.height;
+  const w = Math.min(availW, availH * ar);
+  frame.style.width = `${Math.floor(w)}px`;
+  frame.style.height = `${Math.floor(w / ar)}px`;
+}
+
+/** Меняет размер холста: от него зависит и кадрирование, и размер результата. */
+function setFormat(value) {
+  const [w, h] = value.split("x").map(Number);
+  if (!w || !h) return;
+  canvas.width = w;
+  canvas.height = h;
+  fitFrame();
+  render(signals.v);
+}
+
+new ResizeObserver(fitFrame).observe(document.querySelector("#stage"));
+
 function reportAssets(stats) {
   const parts = [`из файлов: ${stats.fromFile.length}`, `заглушек: ${stats.fromPlaceholder.length}`];
   if (stats.failed.length) parts.push(`без слоя: ${stats.failed.join(", ")}`);
@@ -107,6 +137,12 @@ function reportAssets(stats) {
 
 function analyze(el, dt) {
   const ts = performance.now();
+  if (state.mode === "key") {
+    flatkey.update(el, { tolerance: state.keyTolerance });
+    const sig = signals.relax(dt);
+    render(sig);
+    return sig;
+  }
   faceResult = landmarker.detectForVideo(el, ts);
   if (state.mode === "cutout" && segmenter) {
     const res = segmenter.segmentForVideo(el, ts);
@@ -124,6 +160,8 @@ function render(sig) {
   scenes.draw(ctx, w, h, sig, { parallax: state.parallax });
   if (state.mode === "avatar") {
     rig.draw(ctx, w, h, sig, signals.viseme, { follow: true });
+  } else if (state.mode === "key") {
+    if (flatkey.ready) drawCover(ctx, flatkey.frame, w, h, 0, 0, 1, false);
   } else {
     cutout.repaint(ctx, w, h, signals.mirror);
   }
@@ -334,6 +372,7 @@ async function processSource() {
   signals.mirror = false;
   signals.beginAutoCalibrate(1.2);
   cutout.reset();
+  flatkey.bg = null;
   if (state.mode === "cutout") await ensureSegmenter();
 
   try {
@@ -376,13 +415,26 @@ function wireUI() {
     btn.onclick = () => {
       state.mode = btn.dataset.mode;
       document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("on", b === btn));
-      toast(state.mode === "avatar"
-        ? "Мимика управляет нарисованным персонажем, человека в кадре нет."
-        : "Сегментация вырезает человека и ставит его на сгенерированный фон.");
+      toast({
+        avatar: "Мимика управляет нарисованным персонажем, человека в кадре нет.",
+        cutout: "Сегментация вырезает человека и ставит его на сгенерированный фон.",
+        key: "Ровный фон вырезается по цвету — для готового результата замены.",
+      }[state.mode]);
       if (state.mode === "cutout") ensureSegmenter();
+      if (state.mode === "key") flatkey.bg = null;
     };
   }
   $("#scene").onchange = (e) => scenes.select(e.target.value);
+  $("#format").onchange = (e) => setFormat(e.target.value);
+  $("#tolerance").oninput = (e) => {
+    state.keyTolerance = Number(e.target.value);
+    $("#tol-value").textContent = state.keyTolerance.toFixed(2);
+    // На паузе показываем результат сразу, не дожидаясь следующего кадра.
+    if (!state.running && flatkey.ready) {
+      flatkey.reapply({ tolerance: state.keyTolerance });
+      render(signals.v);
+    }
+  };
   $("#parallax").onchange = (e) => { state.parallax = e.target.checked; };
   $("#debug").onchange = (e) => { state.debug = e.target.checked; };
   $("#invert-mask").onchange = (e) => { state.invertMask = e.target.checked; cutout.reset(); };
@@ -400,6 +452,25 @@ function wireUI() {
   $("#say").onclick = say;
   fillAvatars();
   fillVoices();
+
+  $("#pick-audio").onclick = () => $("#audio-file").click();
+  $("#audio-file").onchange = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const meta = await processor.openAudio(f);
+      $("#audio-info").textContent = `Звук из «${f.name}», ${meta.duration.toFixed(1)} с.`;
+      $("#drop-audio").hidden = false;
+    } catch (err) {
+      $("#audio-info").textContent = `Не открылось: ${err.message}`;
+    }
+  };
+  $("#drop-audio").onclick = async () => {
+    await processor.openAudio(null);
+    $("#audio-file").value = "";
+    $("#drop-audio").hidden = true;
+    $("#audio-info").textContent = "Звук берётся из самого исходника.";
+  };
 
   $("#pick-file").onclick = () => $("#file").click();
   $("#file").onchange = (e) => {
@@ -473,7 +544,7 @@ async function ensureSegmenter() {
 
 // Доступ из консоли: можно прогнать рендер с искусственными сигналами,
 // не включая камеру — удобно при подгонке слоёв.
-window.__avatar = { state, signals, rig, scenes, cutout, processor, whip, provider, render, analyze, canvas, ctx };
+window.__avatar = { state, signals, rig, scenes, cutout, flatkey, setFormat, processor, whip, provider, render, analyze, canvas, ctx };
 
 function drawDebug(sig) {
   const w = canvas.width, h = canvas.height;

@@ -3,6 +3,7 @@
   --fg:#e7ebf0; --dim:#8b95a3; --faint:#6b7684;
   --accent:#6ea8fe; --accent-2:#f0a5c0; --rec:#ff5d5d;
   --r:10px;
+  --ar:1.7778; /* соотношение сторон холста, числом; задаётся из JS */
 }
 *{box-sizing:border-box}
 /* Атрибут hidden слабее любого display в правилах, а мы им прячем
@@ -26,12 +27,16 @@ body{
 #live-badge{color:#fff !important; background:var(--rec) !important; font-weight:600}
 
 /* ─── сцена ─── */
-#stage{display:grid; place-items:center; padding:20px; min-height:0}
-/* Оверлеи позиционируются по кадру, а не по всей сцене, иначе на высоком
-   окне заставка растягивается во весь экран. */
-.frame{position:relative; width:100%; max-width:min(100%, calc((100svh - 190px) * 16 / 9))}
+#stage{
+  display:flex; align-items:center; justify-content:center;
+  padding:20px; min-height:0; overflow:hidden;
+}
+/* Размер кадра считается в JS: CSS не умеет соблюсти пропорцию, когда зажаты
+   обе стороны сразу, а считать от 100svh нельзя — во встроенных панелях эта
+   величина врёт. Оверлеи позиционируются по кадру, а не по всей сцене. */
+.frame{position:relative}
 #out{
-  display:block; width:100%; aspect-ratio:16/9; height:auto;
+  display:block; width:100%; height:100%;
   background:#000; border-radius:var(--r); box-shadow:0 14px 44px #0009;
 }
 #cam{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none}
@@ -89,6 +94,9 @@ button.ghost:hover{color:var(--fg)}
 .hint code{background:var(--raised); padding:1px 5px; border-radius:4px; font-size:12px}
 .chk{display:flex; align-items:center; gap:9px; cursor:pointer; margin-top:8px}
 .chk input{accent-color:var(--accent); width:15px; height:15px; flex:none; padding:0}
+.range{display:block; font-size:13px; color:var(--fg)}
+.range input{width:100%; padding:0; margin-top:8px; accent-color:var(--accent); background:none; border:0}
+.range output{font:12px ui-monospace, monospace; color:var(--dim); margin-left:6px}
 
 #progress{height:6px; background:var(--raised); border-radius:99px; overflow:hidden; margin-bottom:4px}
 #bar{height:100%; width:0; background:var(--accent); transition:width .2s linear}
@@ -129,5 +137,4 @@ dialog::backdrop{background:#070910b0; backdrop-filter:blur(3px)}
   #toolbar .group{flex:1 1 auto}
   #toolbar button, #toolbar select{flex:1}
   #stage{padding:12px}
-  .frame{max-width:100%}
 }
