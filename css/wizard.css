@@ -141,3 +141,19 @@
 .lib-use button{
   flex:1; padding:3px 0; font-size:10px; border-radius:6px;
 }
+
+/* Ссылка-кнопка внутри подсказки: ведёт к шагу, которого не хватает. */
+.step button.linkish{
+  width:auto; display:inline; padding:0; margin:0 6px 0 0;
+  background:none; border:0; color:var(--accent); font-size:12.5px;
+  text-decoration:underline; text-underline-offset:2px;
+}
+.step button.linkish:hover{color:#9cc4ff}
+
+.lib-card .placeholder{
+  display:grid; place-items:center; height:78px; padding:0 6px;
+  font-size:11px; color:var(--faint); text-align:center;
+}
+.lib-card.failed{opacity:.9; border-color:#5a2b2b}
+.lib-card.failed .badge{background:#4a1f1f; color:#ffb4b4}
+.lib-card.failed .placeholder{color:#e08a8a}

@@ -423,8 +423,10 @@ async function loadLibrary() {
 }
 
 function renderLibCard(item) {
+  const failed = item.status === "failed" || item.status === "canceled";
   const card = document.createElement("div");
-  card.className = `lib-card${item.status === "completed" ? "" : " pending"}`;
+  card.className = "lib-card"
+    + (item.status === "completed" ? "" : failed ? " failed" : " pending");
   const when = new Date(item.createdAt).toLocaleString("ru-RU", {
     day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
   });
@@ -433,11 +435,16 @@ function renderLibCard(item) {
     ? (item.kind === "video"
       ? Object.assign(document.createElement("video"), { src: item.url, muted: true, preload: "metadata" })
       : Object.assign(document.createElement("img"), { src: item.url, alt: item.model }))
-    : Object.assign(document.createElement("div"), { className: "meta", textContent: "готовится" });
+    : Object.assign(document.createElement("div"), {
+      className: "placeholder",
+      textContent: failed ? "не получилось" : "готовится",
+    });
 
   const badge = document.createElement("span");
   badge.className = "badge";
-  badge.textContent = item.status === "completed" ? (item.kind === "video" ? "видео" : "фото") : item.status;
+  badge.textContent = item.status === "completed"
+    ? (item.kind === "video" ? "видео" : "фото")
+    : failed ? "ошибка" : "в работе";
 
   const meta = document.createElement("div");
   meta.className = "meta";
@@ -502,7 +509,29 @@ function refresh() {
   $("#run-swap").disabled = !(state.src && state.sheet) || blocked;
   $("#assemble").disabled = !state.swap || state.busy;
 
-  if (!state.swap) $("#assemble-info").textContent = "Нужен результат замены.";
+  // Подсказка должна называть недостающее и вести к нему, а не перечислять
+  // всё подряд: человек смотрит на выключенную кнопку и не понимает, что не так.
+  if (!state.busy) {
+    const missing = [];
+    if (!state.src) missing.push({ what: "исходное видео", step: 1 });
+    if (!state.sheet) missing.push({ what: "чистовой лист персонажа", step: 2 });
+    if (missing.length && hf.ready) {
+      const info = $("#swap-info");
+      info.replaceChildren(
+        document.createTextNode(`Не хватает: ${missing.map((m) => m.what).join(" и ")}. `),
+      );
+      for (const m of missing) {
+        const a = document.createElement("button");
+        a.className = "linkish";
+        a.textContent = `перейти к шагу ${m.step}`;
+        a.onclick = () => openStep(m.step);
+        info.append(a);
+      }
+    }
+    $("#assemble-info").textContent = state.swap
+      ? $("#assemble-info").textContent
+      : "Не хватает результата замены — сделайте шаг 4 или возьмите готовое видео из библиотеки.";
+  }
 
   // Выключенная кнопка сама по себе ничего не объясняет: человек жмёт, ничего
   // не происходит, и это выглядит поломкой. Пишем причину прямо на ней.

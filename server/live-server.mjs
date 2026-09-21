@@ -377,6 +377,10 @@ async function handleHiggsfield(req, res, path) {
           "--image-references", p.sheet,
           "--video-references", p.src,
           "--mode", body.resolution === "1080p" ? "pro" : "std",
+          // Явно: фон берём с листа персонажа. Без этого задание уходило с
+          // фоном из видео — другой и более тяжёлый режим, который падал, да и
+          // ровной заливки для ключа в нём не остаётся.
+          "--background-source", "input_image",
         ]);
         return started.jobId
           ? json(res, 200, { jobId: started.jobId })
