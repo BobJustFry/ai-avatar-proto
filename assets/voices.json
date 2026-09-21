@@ -1,0 +1,24 @@
+{
+  "note": "Каталог голосов с образцами. CLI отдаёт только имя и тип, ссылки на превью приходят из MCP, поэтому список хранится здесь. Обновляется вручную, когда Higgsfield добавит голоса.",
+  "voices": [
+    { "id": "7c2133e5-68ab-511f-9aed-9a67664382b1", "name": "Alexey", "gender": "male", "preview": "https://cdn.higgsfield.ai/audio_voice_preset/preview/7c2133e5-68ab-511f-9aed-9a67664382b1.mp3" },
+    { "id": "ca12fd00-218c-5198-b10c-7d36e768c12c", "name": "Bob", "gender": "male", "preview": "https://cdn.higgsfield.ai/audio_voice_preset/preview/ca12fd00-218c-5198-b10c-7d36e768c12c.mp3" },
+    { "id": "e5666b9c-99a2-4fac-8b4e-abee078b186d", "name": "Vlad", "gender": "male", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/55118fe8-5390-4bb2-b0d4-9fef14d91f2b.mp3" },
+    { "id": "6b528d43-c056-4a2f-9d82-1591a7ba13b0", "name": "John", "gender": "male", "preview": "https://cdn.higgsfield.ai/audio_voice/fda261dc-1245-4bba-b47b-4debd425b31a.mp3" },
+    { "id": "573e5163-59b3-4926-aab1-951ef2985f81", "name": "Harrison", "gender": "male", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/725aa234-8c64-4a87-8f5e-220aca1375f7.mp3" },
+    { "id": "6f98d3dd-324f-4845-8c28-c1d1647a06cd", "name": "Marcus", "gender": "male", "preview": "https://cdn.higgsfield.ai/audio_voice/cd7a989c-89ba-43c8-bc02-44a8c429825f.wav" },
+    { "id": "30fc8796-ceb6-4a66-b3a7-4a145ef7f346", "name": "Arthur", "gender": "male", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/080fcbab-8be3-4d60-8156-3c3040421e0f.mp3" },
+    { "id": "ed69c516-92d2-4b30-a967-617737a342e5", "name": "Orion", "gender": "male", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/4ea32dda-a9b3-4cdc-8021-b827a166ad44.mp3" },
+
+    { "id": "ca83ca7f-c186-493d-bd69-0d765fa861b2", "name": "Elena", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/1f743d5b-f5f5-4add-a124-1de7c176a531.mp3" },
+    { "id": "d081b915-6623-4a44-bacf-80d0f1c90a03", "name": "Nora", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/7d7c4a2e-0e79-4eb2-b695-e1de5831f27e.mp3" },
+    { "id": "41023a48-71ab-478a-bea7-c7b5a78f6b36", "name": "Sienna", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/5c1ab4a7-405e-4237-a126-3b94d8ba7d8c.mp3" },
+    { "id": "d198dc0b-c4e5-5198-aa1d-ecf5ca0927c4", "name": "Faye", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice/d198dc0b-c4e5-5198-aa1d-ecf5ca0927c4/preview-2c0cfabdc015c510.mp3" },
+    { "id": "57ccb351-84d7-54ba-afd4-26b566ca6023", "name": "Celine", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice/57ccb351-84d7-54ba-afd4-26b566ca6023/preview-b8a818f93ce2e187.mp3" },
+    { "id": "375a3398-e3b4-4f91-845d-42181e352899", "name": "Luna", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/b3b5b2a1-7606-4e40-ac69-bf0ba43d3840.mp3" },
+    { "id": "b0f766b7-8703-4bd1-b973-f857c36837b6", "name": "Maya", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/dc8d2759-bb32-4b0e-904d-b8873efc958e.mp3" },
+    { "id": "e9cfbbf0-4476-46be-b396-596eb774b165", "name": "Chloe", "gender": "female", "preview": "https://d1xarpci4ikg0w.cloudfront.net/audio_voice_preset/preview/6851db6f-4e33-422a-a5c9-68e1e01cc83a.mp3" },
+    { "id": "6b3e3642-f7b7-4cb8-9688-51e233c4b92f", "name": "Emily", "gender": "female", "preview": "https://cdn.higgsfield.ai/audio_voice/6cf1cf4b-8fd5-4ef2-abb7-10e43b2aa9be.mp3" },
+    { "id": "caeba733-3c17-43db-863e-69c7025512cd", "name": "Naomi", "gender": "female", "preview": "https://cdn.higgsfield.ai/audio_voice/bfe496ad-1296-441e-9ba6-02cfe4761eb3.wav" }
+  ]
+}
