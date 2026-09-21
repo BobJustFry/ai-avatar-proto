@@ -36,14 +36,17 @@ export async function hfStatus() {
     if (!d.authOk) {
       return { ready: false, reason: "Ключ Higgsfield не принят — проверьте пару ID и секрет в .env." };
     }
-    if (d.trialBlocked) {
+    if (d.genState === "blocked") {
       return {
         ready: false,
+        state: "blocked",
         reason: "Тариф Higgsfield не даёт приложению генерировать. Сделайте этот шаг "
           + "снаружи и загрузите готовый файл кнопкой ниже.",
       };
     }
-    return { ready: true, reason: "", credits: d.credits ?? "?" };
+    // «unknown» — ключ рабочий, но генерацию ещё ни разу не пробовали.
+    // Врать «всё готово» нельзя: доступность выяснится только на первой попытке.
+    return { ready: true, state: d.genState === "ok" ? "ok" : "unknown", reason: "" };
   } catch (err) {
     return { ready: false, reason: `Сервер недоступен (${err.message}). Запустите run.cmd.` };
   }

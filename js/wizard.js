@@ -293,7 +293,7 @@ async function fetchAsFile(url, name) {
 
 /** Обёртка для долгих шагов: блокировка кнопки и честный текст ошибки. */
 async function longStep(btn, info, label, fn) {
-  const was = btn.textContent;
+  btn.dataset.busy = "1";
   btn.disabled = true;
   btn.textContent = label;
   try {
@@ -302,7 +302,7 @@ async function longStep(btn, info, label, fn) {
     console.error(err);
     $(info).textContent = err.message;
   } finally {
-    btn.textContent = was;
+    delete btn.dataset.busy;
     refresh();
   }
 }
@@ -361,18 +361,32 @@ function sheetAspect() {
 // --- доступность кнопок ------------------------------------------------------
 
 function refresh() {
-  $("#make-sheet").disabled = !state.charFile || !hf.ready;
+  const blocked = !hf.ready;
+
+  $("#make-sheet").disabled = !state.charFile || blocked;
   $("#use-as-sheet").disabled = !state.charFile;
-  $("#gen-bg").disabled = !hf.ready;
-  $("#run-swap").disabled = !(state.src && state.sheet) || !hf.ready;
+  $("#gen-bg").disabled = blocked;
+  $("#run-swap").disabled = !(state.src && state.sheet) || blocked;
   $("#assemble").disabled = !state.swap || state.busy;
 
   if (!state.swap) $("#assemble-info").textContent = "Нужен результат замены.";
-  // Когда генерация недоступна, ручной путь должен быть на виду, а не мелким
-  // текстом под выключенной кнопкой.
-  const manual = !hf.ready;
-  $("#pick-swap").classList.toggle("primary", manual);
-  $("#use-as-sheet").classList.toggle("primary", manual);
+
+  // Выключенная кнопка сама по себе ничего не объясняет: человек жмёт, ничего
+  // не происходит, и это выглядит поломкой. Пишем причину прямо на ней.
+  for (const [sel, normal] of [
+    ["#make-sheet", "Сделать чистовой лист"],
+    ["#run-swap", "Заменить персонажа"],
+    ["#gen-bg", "Сгенерировать фон"],
+  ]) {
+    const btn = $(sel);
+    if (btn.dataset.busy === "1") continue;
+    btn.textContent = blocked ? "Недоступно на этом тарифе" : normal;
+    btn.classList.toggle("blocked", blocked);
+  }
+
+  // Ручной путь в этом случае — основной, а не запасной.
+  $("#pick-swap").classList.toggle("primary", blocked);
+  $("#use-as-sheet").classList.toggle("primary", blocked);
 }
 
 // --- состояние доступа к Higgsfield ------------------------------------------
@@ -383,12 +397,34 @@ async function checkHiggsfield() {
   const res = await hfStatus();
   hf.ready = res.ready;
   hf.reason = res.reason;
-  const note = res.ready
-    ? `Higgsfield подключён, кредитов: ${res.credits}.`
-    : res.reason;
-  $("#sheet-info").textContent = state.sheet ? $("#sheet-info").textContent : note;
-  $("#swap-info").textContent = note;
-  $("#bg-info").textContent = state.bg ? $("#bg-info").textContent : "Фон не выбран.";
+
+  // Состояние объявляем сразу и вверху: мастер, который выглядит рабочим и
+  // молча ничего не делает, — худшее, что можно предложить.
+  const notice = $("#notice");
+  notice.hidden = false;
+  notice.classList.toggle("ok", res.state === "ok");
+  notice.classList.toggle("warn", res.state === "unknown");
+  if (res.state === "ok") {
+    $("#notice-title").textContent = "Всё готово.";
+    $("#notice-text").textContent =
+      "Higgsfield подключён, мастер проходится целиком: шаги 2 и 4 считаются автоматически.";
+  } else if (res.state === "unknown") {
+    $("#notice-title").textContent = "Генерация ещё не проверена.";
+    $("#notice-text").textContent =
+      "Ключ Higgsfield принят, но доступна ли генерация на вашем тарифе, выяснится "
+      + "только на первой попытке — счёт кредитов заранее узнать нельзя. Если тариф "
+      + "её не даст, мастер сразу переключится на ручной путь и больше не будет "
+      + "предлагать кнопки, которые не работают.";
+  } else {
+    $("#notice-title").textContent = "Шаги 2 и 4 сейчас не работают.";
+    $("#notice-text").textContent =
+      `${res.reason} Шаги 1, 3 и 5 работают как обычно: выбор исходника, фон и сборка `
+      + "готового ролика со звуком. Чистовой лист и замену нужно получить снаружи "
+      + "и подставить кнопками «Фото уже чистовое» и «Загрузить готовый результат замены».";
+  }
+
+  if (!state.sheet) $("#sheet-info").textContent = res.ready ? "Листа пока нет." : res.reason;
+  if (!state.swap) $("#swap-info").textContent = res.ready ? "Нужны исходник и чистовой лист." : res.reason;
   refresh();
 }
 

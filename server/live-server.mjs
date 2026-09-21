@@ -208,13 +208,27 @@ async function withTempFiles(files, fn) {
 }
 
 /** Ошибку CLI показываем как есть — она объясняет причину лучше наших догадок. */
-// Запоминаем отказ тарифа: второй раз гонять мегабайты ради того же ответа
-// бессмысленно, лучше предупредить до нажатия кнопки.
-let trialBlocked = false;
+// Про доступность генерации нельзя узнать, не попробовав: cost считается даже
+// там, где create запрещён. Поэтому состояний три — неизвестно, работает,
+// запрещено, — и результат сохраняется, чтобы не выяснять заново после каждого
+// перезапуска. Файл лежит рядом с проектом и в репозиторий не попадает.
+const STATE_FILE = join(ROOT, ".higgsfield-state.json");
+let genState = "unknown"; // unknown | ok | blocked
+
+try {
+  const saved = JSON.parse(await readFile(STATE_FILE, "utf8"));
+  if (saved.genState === "ok" || saved.genState === "blocked") genState = saved.genState;
+} catch { /* первого запуска ещё не было */ }
+
+async function setGenState(value) {
+  if (genState === value) return;
+  genState = value;
+  await writeFile(STATE_FILE, JSON.stringify({ genState }, null, 2)).catch(() => {});
+}
 
 function cliError(res) {
   const raw = (res.err || res.out || "").trim();
-  if (raw.match(/only_mcp_usage_on_trial_is_available|not_enough_credits/)) trialBlocked = true;
+  if (raw.match(/only_mcp_usage_on_trial_is_available|not_enough_credits/)) setGenState("blocked");
   const known = raw.match(/only_mcp_usage_on_trial_is_available/)
     ? "на пробном тарифе генерация доступна только через MCP — нужен платный план"
     : raw.match(/not_enough_credits/) ? "кредитов на счёте API нет" : null;
@@ -236,16 +250,16 @@ async function handleHiggsfield(req, res, path) {
       authOk = probe.code === 0;
     }
     return json(res, 200, {
-      cli: version.code === 0, configured, authOk, trialBlocked,
+      cli: version.code === 0, configured, authOk, genState,
       via: cliJs ? "node" : "shell",
     });
   }
 
-  if (trialBlocked) {
+  if (genState === "blocked") {
     return json(res, 503, {
       error: "генерация через API недоступна на текущем тарифе Higgsfield — "
         + "сделайте шаг снаружи и загрузите готовый файл",
-      trialBlocked: true,
+      genState: "blocked",
     });
   }
 
@@ -263,6 +277,7 @@ async function handleHiggsfield(req, res, path) {
         "--wait", "--wait-timeout", "5m", "--json",
       ]);
       const url = r.code === 0 ? resultUrl(r.out) : null;
+      if (url) await setGenState("ok");
       return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
     });
   }
@@ -277,6 +292,7 @@ async function handleHiggsfield(req, res, path) {
       "--wait", "--wait-timeout", "5m", "--json",
     ]);
     const url = r.code === 0 ? resultUrl(r.out) : null;
+    if (url) await setGenState("ok");
     return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
   }
 
