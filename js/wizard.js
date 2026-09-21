@@ -8,7 +8,7 @@
 import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { FlatKey } from "./flatkey.js";
 import { drawCover } from "./scene.js";
-import { hfStatus, hfRecheck, hfLibrary, waitForJob, makeSheet, makeBackground, runSwap } from "./hf.js";
+import { hfStatus, hfRecheck, hfLibrary, waitForJob, makeSheet, makeBackground, runSwap, runObjectSwap } from "./hf.js";
 
 const $ = (s) => document.querySelector(s);
 const canvas = $("#out");
@@ -26,6 +26,7 @@ const state = {
   format: "auto",
   tolerance: 0.1,
   busy: false,
+  mode: "character", // character — персонаж и фон, object — предмет в кадре
 };
 
 // --- шаги --------------------------------------------------------------------
@@ -39,6 +40,21 @@ function openStep(n) {
 
 const markDone = (n, done = true) =>
   document.querySelector(`.step[data-step="${n}"]`)?.classList.toggle("done", done);
+
+/** Переключает тип замены: меняется и набор шагов, и что считается готовым. */
+function setMode(mode) {
+  state.mode = mode;
+  document.body.dataset.mode = mode;
+  for (const b of document.querySelectorAll("#modes .mode")) {
+    b.classList.toggle("on", b.dataset.mode === mode);
+  }
+  // Фон относится только к персонажу: в режиме предмета сцена остаётся вашей.
+  if (mode === "object") {
+    state.bg = null;
+    markDone(3, false);
+  }
+  refresh();
+}
 
 function wireSteps() {
   for (const h of document.querySelectorAll(".step h2")) {
@@ -283,7 +299,7 @@ async function assemble() {
     const blob = await processor.run({
       onFrame: (el) => {
         ctx.clearRect(0, 0, w, h);
-        if (!state.bg) {
+        if (state.mode === "object" || !state.bg) {
           // Без фона вырезать нечего: шахматка из превью не должна попасть
           // в файл, поэтому кадр идёт как есть — меняется только звук и формат.
           drawCover(ctx, el, w, h);
@@ -383,6 +399,27 @@ function generateSwap() {
       onTick: (sec) => { $("#swap-info").textContent = `Считается, прошло ${sec} с. Результат не потеряется: он появится в библиотеке.`; },
     });
     await useSwapResult(await fetchAsFile(url, "swap.mp4"));
+    loadLibrary();
+  });
+}
+
+function generateObject() {
+  const prompt = $("#object-prompt").value.trim();
+  if (!prompt) {
+    $("#swap-info").textContent = "Опишите словами, что заменить в кадре.";
+    return;
+  }
+  return longStep($("#run-object"), "#swap-info", "Заменяю…", async () => {
+    const { jobId } = await runObjectSwap(state.charFile.file, state.src.file, {
+      prompt,
+      resolution: $("#quality").value === "1080p" ? "1080p" : "720p",
+    });
+    $("#swap-info").textContent = `Задание ${jobId.slice(0, 8)} в очереди…`;
+    loadLibrary();
+    const url = await waitForJob(jobId, {
+      onTick: (sec) => { $("#swap-info").textContent = `Считается, прошло ${sec} с. Результат не потеряется: он появится в библиотеке.`; },
+    });
+    await useSwapResult(await fetchAsFile(url, "object.mp4"));
     loadLibrary();
   });
 }
@@ -507,6 +544,7 @@ function refresh() {
   $("#use-as-sheet").disabled = !state.charFile;
   $("#gen-bg").disabled = blocked;
   $("#run-swap").disabled = !(state.src && state.sheet) || blocked;
+  $("#run-object").disabled = !(state.src && state.charFile) || blocked;
   $("#assemble").disabled = !state.swap || state.busy;
 
   // Подсказка должна называть недостающее и вести к нему, а не перечислять
@@ -514,7 +552,11 @@ function refresh() {
   if (!state.busy) {
     const missing = [];
     if (!state.src) missing.push({ what: "исходное видео", step: 1 });
-    if (!state.sheet) missing.push({ what: "чистовой лист персонажа", step: 2 });
+    if (state.mode === "character") {
+      if (!state.sheet) missing.push({ what: "чистовой лист персонажа", step: 2 });
+    } else if (!state.charFile) {
+      missing.push({ what: "фото предмета", step: 2 });
+    }
     if (missing.length && hf.ready) {
       const info = $("#swap-info");
       info.replaceChildren(
@@ -538,6 +580,7 @@ function refresh() {
   for (const [sel, normal] of [
     ["#make-sheet", "Сделать чистовой лист"],
     ["#run-swap", "Заменить персонажа"],
+    ["#run-object", "Заменить предмет"],
     ["#gen-bg", "Сгенерировать фон"],
   ]) {
     const btn = $(sel);
@@ -598,6 +641,11 @@ async function checkHiggsfield() {
 
 function wire() {
   wireSteps();
+  for (const b of document.querySelectorAll("#modes .mode")) {
+    b.onclick = () => setMode(b.dataset.mode);
+  }
+  setMode("character");
+  $("#run-object").onclick = generateObject;
 
   $("#pick-src").onclick = () => $("#src-file").click();
   $("#src-file").onchange = (e) => e.target.files[0] && pickSource(e.target.files[0]);

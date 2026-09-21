@@ -72,6 +72,16 @@ export async function runSwap(sheetFile, videoFile, { resolution = "720p" } = {}
   });
 }
 
+/** Замена предмета в кадре: видео, фото нового предмета и описание. */
+export async function runObjectSwap(imageFile, videoFile, { prompt, resolution = "720p" } = {}) {
+  return post("/object", {
+    image: await toBase64(imageFile),
+    video: await toBase64(videoFile),
+    prompt,
+    resolution,
+  });
+}
+
 export async function makeBackground(prompt, { aspect = "9:16" } = {}) {
   return post("/background", { prompt, aspect });
 }

@@ -367,6 +367,28 @@ async function handleHiggsfield(req, res, path) {
       : json(res, 502, { error: started.error });
   }
 
+  // Замена предмета внутри снятой сцены: всё остальное в кадре не трогаем,
+  // поэтому ни ровной заливки, ни подстановки фона здесь нет.
+  if (path === "/api/hf/object") {
+    if (!body.image || !body.video) return json(res, 400, { error: "нужны фото предмета и видео" });
+    if (!body.prompt?.trim()) return json(res, 400, { error: "нужно описание: что заменить" });
+    return withTempFiles(
+      { ref: { base64: body.image, ext: "png" }, src: { base64: body.video, ext: "mp4" } },
+      async (p) => {
+        const started = await startJob([
+          "generate", "create", "hf_mult_replace_object",
+          "--prompt", body.prompt.trim(),
+          "--image-references", p.ref,
+          "--video-references", p.src,
+          "--resolution", body.resolution || "720p",
+        ]);
+        return started.jobId
+          ? json(res, 200, { jobId: started.jobId })
+          : json(res, 502, { error: started.error });
+      },
+    );
+  }
+
   if (path === "/api/hf/swap") {
     if (!body.image || !body.video) return json(res, 400, { error: "нужны лист персонажа и видео" });
     return withTempFiles(

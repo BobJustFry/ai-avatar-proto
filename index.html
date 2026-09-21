@@ -25,7 +25,13 @@
 
 <main id="wizard">
 
-  <!-- ─── левая колонка: шаги ─── -->
+  <!-- ─── левая колонка: выбор типа и шаги ─── -->
+  <div class="col">
+  <div id="modes" role="group" aria-label="Что меняем">
+    <button class="mode on" data-mode="character">Персонаж и фон</button>
+    <button class="mode" data-mode="object">Предмет на видео</button>
+  </div>
+
   <ol id="steps">
 
     <li class="step open" data-step="1">
@@ -40,28 +46,39 @@
     </li>
 
     <li class="step" data-step="2">
-      <h2><span class="num">2</span> Новый персонаж</h2>
+      <h2><span class="num">2</span> <span class="title-character">Новый персонаж</span><span class="title-object">Новый предмет</span></h2>
       <div class="body">
-        <p class="lead">Фотография или рисунок того, кем станет человек в кадре.</p>
-        <button id="pick-char">Выбрать фото персонажа</button>
+        <p class="lead only-character">Фотография или рисунок того, кем станет человек в кадре.</p>
+        <p class="lead only-object">Фотография предмета, который должен появиться в кадре
+        вместо нынешнего: другая машина, другая вывеска, другая бутылка.</p>
+        <button id="pick-char"><span class="title-character">Выбрать фото персонажа</span><span class="title-object">Выбрать фото предмета</span></button>
         <input type="file" id="char-file" accept="image/*" hidden>
         <p class="hint" id="char-info">Не выбрано.</p>
 
-        <div class="divider">затем</div>
-
-        <p class="lead">Из этого фото делается <b>чистовой лист</b>: тот же герой
-        анфас, в нейтральной позе, на ровном фоне. Именно он идёт в генерацию —
-        напрямую фото со сцены работает плохо.</p>
-        <div class="row">
-          <button id="make-sheet" class="primary" disabled>Сделать чистовой лист</button>
-          <button id="use-as-sheet" disabled>Фото уже чистовое</button>
+        <div class="only-character">
+          <div class="divider">затем</div>
+          <p class="lead">Из этого фото делается <b>чистовой лист</b>: тот же герой
+          анфас, в нейтральной позе, на ровном фоне. Именно он идёт в генерацию —
+          напрямую фото со сцены работает плохо.</p>
+          <div class="row">
+            <button id="make-sheet" class="primary" disabled>Сделать чистовой лист</button>
+            <button id="use-as-sheet" disabled>Фото уже чистовое</button>
+          </div>
+          <p class="hint" id="sheet-info">Листа пока нет.</p>
         </div>
-        <p class="hint" id="sheet-info">Листа пока нет.</p>
+
+        <div class="only-object">
+          <div class="divider">и описание</div>
+          <p class="lead">Словами: что именно заменить. Модель должна понять, какой
+          объект в кадре трогать, а всё остальное оставить нетронутым.</p>
+          <textarea id="object-prompt" rows="2" placeholder="Заменить автомобиль на тот, что на фото"></textarea>
+        </div>
+
         <div class="thumbs" id="thumbs-char"></div>
       </div>
     </li>
 
-    <li class="step" data-step="3">
+    <li class="step only-character" data-step="3">
       <h2><span class="num">3</span> Фон <span class="opt">необязательно</span></h2>
       <div class="body">
         <p class="lead">Чем заменить обстановку. Без выбора персонаж останется
@@ -81,8 +98,10 @@
     <li class="step" data-step="4">
       <h2><span class="num">4</span> Замена</h2>
       <div class="body">
-        <p class="lead">Персонаж с листа повторит движения и мимику из вашей
-        записи. Считается на стороне Higgsfield, занимает от полуминуты до двух.</p>
+        <p class="lead only-character">Персонаж с листа повторит движения и мимику из вашей
+        записи. Считается на стороне Higgsfield, занимает несколько минут.</p>
+        <p class="lead only-object">Предмет заменится прямо внутри вашей сцены.
+        Фон, свет и остальной кадр остаются вашими — подставлять ничего не нужно.</p>
         <div class="row">
           <label class="pick">Качество
             <select id="quality">
@@ -91,7 +110,8 @@
             </select>
           </label>
         </div>
-        <button id="run-swap" class="primary" disabled>Заменить персонажа</button>
+        <button id="run-swap" class="primary only-character" disabled>Заменить персонажа</button>
+        <button id="run-object" class="primary only-object" disabled>Заменить предмет</button>
         <p class="hint" id="swap-info">Нужны исходник и чистовой лист.</p>
         <div class="thumbs" id="thumbs-swap"></div>
         <div class="row" id="swap-import-row">
@@ -104,8 +124,10 @@
     <li class="step" data-step="5">
       <h2><span class="num">5</span> Сборка</h2>
       <div class="body">
-        <p class="lead">Ровная заливка вырезается, за персонажа встаёт фон,
+        <p class="lead only-character">Ровная заливка вырезается, за персонажа встаёт фон,
         поверх ложится звук из вашей исходной записи.</p>
+        <p class="lead only-object">Кадр остаётся как есть — к нему возвращается звук
+        из исходной записи и, если нужно, меняется формат.</p>
         <div class="row">
           <label class="pick">Формат
             <select id="format">
@@ -118,11 +140,13 @@
             </select>
           </label>
         </div>
-        <label class="range">Допуск ключа <output id="tol-value">0.10</output>
-          <input type="range" id="tolerance" min="0.04" max="0.40" step="0.01" value="0.10">
-        </label>
-        <p class="hint">Больше — чище вырезается заливка, но пропадают светлые
-        места персонажа. Меньше — по краям остаётся кайма.</p>
+        <div class="only-character">
+          <label class="range">Допуск ключа <output id="tol-value">0.10</output>
+            <input type="range" id="tolerance" min="0.04" max="0.40" step="0.01" value="0.10">
+          </label>
+          <p class="hint">Больше — чище вырезается заливка, но пропадают светлые
+          места персонажа. Меньше — по краям остаётся кайма.</p>
+        </div>
         <div id="progress" hidden><div id="bar"></div></div>
         <button id="assemble" class="primary" disabled>Собрать ролик</button>
         <p class="hint" id="assemble-info">Нужен результат замены.</p>
@@ -130,6 +154,7 @@
     </li>
 
   </ol>
+  </div>
 
   <!-- ─── правая колонка: превью и библиотека ─── -->
   <aside id="preview">
