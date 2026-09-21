@@ -8,7 +8,7 @@
 import { VideoProcessor, downloadBlob, stamp } from "./pipeline.js";
 import { FlatKey } from "./flatkey.js";
 import { drawCover } from "./scene.js";
-import { hfStatus, hfRecheck, makeSheet, makeBackground, runSwap } from "./hf.js";
+import { hfStatus, hfRecheck, hfLibrary, waitForJob, makeSheet, makeBackground, runSwap } from "./hf.js";
 
 const $ = (s) => document.querySelector(s);
 const canvas = $("#out");
@@ -121,6 +121,28 @@ function outputSize() {
   return el ? [el.videoWidth, el.videoHeight] : [1280, 720];
 }
 
+/** Кладёт миниатюру в шаг. Клик возвращает картинку в большое превью. */
+function addThumb(containerSel, src, caption, onOpen) {
+  const box = $(containerSel);
+  const old = box.querySelector(`figure[data-caption="${caption}"]`);
+  if (old) old.remove();
+  const fig = document.createElement("figure");
+  fig.dataset.caption = caption;
+  fig.innerHTML = `<img alt="${caption}"><figcaption>${caption}</figcaption>`;
+  fig.querySelector("img").src = src;
+  fig.onclick = onOpen;
+  box.append(fig);
+}
+
+/** Кадр из видео как картинка — для миниатюры результата замены. */
+function frameToUrl(el) {
+  const cv = document.createElement("canvas");
+  cv.width = 160;
+  cv.height = Math.round(160 * el.videoHeight / el.videoWidth) || 160;
+  cv.getContext("2d").drawImage(el, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/jpeg", 0.8);
+}
+
 // --- загрузка файлов ---------------------------------------------------------
 
 function loadVideo(file) {
@@ -179,6 +201,8 @@ async function pickCharacter(file) {
     state.charFile = { file, url, img };
     $("#char-info").textContent = `${file.name} · ${img.naturalWidth}×${img.naturalHeight}`;
     previewSource(img, "Фото персонажа. Для генерации из него делается чистовой лист.");
+    addThumb("#thumbs-char", url, "исходное фото",
+      () => previewSource(img, "Исходное фото персонажа."));
     refresh();
   } catch (err) {
     $("#char-info").textContent = `Не открылось: ${err.message}`;
@@ -189,6 +213,8 @@ function setSheet(entry, note) {
   state.sheet = entry;
   $("#sheet-info").textContent = note;
   previewSource(entry.img, "Чистовой лист персонажа.");
+  addThumb("#thumbs-char", entry.url, "чистовой лист",
+    () => previewSource(entry.img, "Чистовой лист персонажа."));
   markDone(2);
   refresh();
 }
@@ -207,6 +233,7 @@ async function pickBackground(file) {
       state.bg = { kind: "image", url: im.url, el: im.img };
     }
     $("#bg-info").textContent = `Фон: ${file.name}`;
+    addThumb("#thumbs-bg", state.bg.url, "фон", () => previewComposite("Фон."));
     markDone(3);
     previewComposite("Фон выбран.");
     refresh();
@@ -225,6 +252,8 @@ async function useSwapResult(file) {
     await seekTo(state.swap.el, Math.min(1, duration / 3));
     flatkey.bg = null;
     flatkey.update(state.swap.el, { tolerance: state.tolerance });
+    addThumb("#thumbs-swap", frameToUrl(state.swap.el), "замена",
+      () => previewComposite("Результат замены на фоне."));
     markDone(4);
     previewComposite("Так будет выглядеть сборка.");
     refresh();
@@ -309,11 +338,15 @@ async function longStep(btn, info, label, fn) {
 
 function generateSheet() {
   return longStep($("#make-sheet"), "#sheet-info", "Рисую…", async () => {
-    $("#sheet-info").textContent = "Генерация идёт, обычно меньше минуты…";
-    const { url } = await makeSheet(state.charFile.file, { aspect: sheetAspect() });
-    const file = await fetchAsFile(url, "sheet.png");
-    const entry = await loadImage(file);
+    const { jobId } = await makeSheet(state.charFile.file, { aspect: sheetAspect() });
+    $("#sheet-info").textContent = `Задание ${jobId.slice(0, 8)} поставлено в очередь…`;
+    loadLibrary();
+    const url = await waitForJob(jobId, {
+      onTick: (sec) => { $("#sheet-info").textContent = `Рисую, прошло ${sec} с. Результат не потеряется: он появится в библиотеке.`; },
+    });
+    const entry = await loadImage(await fetchAsFile(url, "sheet.png"));
     setSheet(entry, "Чистовой лист готов.");
+    loadLibrary();
   });
 }
 
@@ -325,12 +358,16 @@ function generateBackground() {
     return;
   }
   return longStep($("#gen-bg"), "#bg-info", "Рисую…", async () => {
-    $("#bg-info").textContent = "Генерация фона…";
-    const { url } = await makeBackground(prompt, { aspect: sheetAspect() });
-    const file = await fetchAsFile(url, "background.png");
-    const im = await loadImage(file);
+    const { jobId } = await makeBackground(prompt, { aspect: sheetAspect() });
+    $("#bg-info").textContent = `Задание ${jobId.slice(0, 8)} в очереди…`;
+    loadLibrary();
+    const url = await waitForJob(jobId, {
+      onTick: (sec) => { $("#bg-info").textContent = `Рисую фон, прошло ${sec} с.`; },
+    });
+    const im = await loadImage(await fetchAsFile(url, "background.png"));
     state.bg = { kind: "image", url: im.url, el: im.img };
     $("#bg-info").textContent = "Фон сгенерирован.";
+    addThumb("#thumbs-bg", im.url, "фон", () => previewComposite("Фон."));
     markDone(3);
     previewComposite("Фон сгенерирован.");
   });
@@ -338,11 +375,15 @@ function generateBackground() {
 
 function generateSwap() {
   return longStep($("#run-swap"), "#swap-info", "Заменяю…", async () => {
-    $("#swap-info").textContent = "Замена считается, это до двух минут…";
     const sheetFile = state.sheet.file ?? await fetchAsFile(state.sheet.url, "sheet.png");
-    const { url } = await runSwap(sheetFile, state.src.file, { resolution: $("#quality").value });
-    const file = await fetchAsFile(url, "swap.mp4");
-    await useSwapResult(file);
+    const { jobId } = await runSwap(sheetFile, state.src.file, { resolution: $("#quality").value });
+    $("#swap-info").textContent = `Задание ${jobId.slice(0, 8)} в очереди…`;
+    loadLibrary();
+    const url = await waitForJob(jobId, {
+      onTick: (sec) => { $("#swap-info").textContent = `Считается, прошло ${sec} с. Результат не потеряется: он появится в библиотеке.`; },
+    });
+    await useSwapResult(await fetchAsFile(url, "swap.mp4"));
+    loadLibrary();
   });
 }
 
@@ -356,6 +397,98 @@ function sheetAspect() {
   if (r > 0.9) return "1:1";
   if (r > 0.72) return "3:4";
   return "9:16";
+}
+
+// --- библиотека --------------------------------------------------------------
+
+/**
+ * Список всего, что сгенерировано на аккаунте. Вебхука у локального приложения
+ * быть не может, и вкладку легко закрыть, поэтому источник правды — не память
+ * страницы, а сам Higgsfield.
+ */
+async function loadLibrary() {
+  const box = $("#lib-items");
+  try {
+    const items = await hfLibrary();
+    if (!items.length) {
+      $("#lib-info").textContent = "Пока пусто: ни одной генерации на аккаунте.";
+      box.replaceChildren();
+      return;
+    }
+    $("#lib-info").textContent = "Нажмите на результат, чтобы посмотреть, или выберите, куда его подставить.";
+    box.replaceChildren(...items.map(renderLibCard));
+  } catch (err) {
+    $("#lib-info").textContent = `Библиотека недоступна: ${err.message}`;
+  }
+}
+
+function renderLibCard(item) {
+  const card = document.createElement("div");
+  card.className = `lib-card${item.status === "completed" ? "" : " pending"}`;
+  const when = new Date(item.createdAt).toLocaleString("ru-RU", {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+
+  const media = item.url
+    ? (item.kind === "video"
+      ? Object.assign(document.createElement("video"), { src: item.url, muted: true, preload: "metadata" })
+      : Object.assign(document.createElement("img"), { src: item.url, alt: item.model }))
+    : Object.assign(document.createElement("div"), { className: "meta", textContent: "готовится" });
+
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = item.status === "completed" ? (item.kind === "video" ? "видео" : "фото") : item.status;
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = `${item.model} · ${when}`;
+
+  card.append(media, badge, meta);
+
+  if (item.status === "completed" && item.url) {
+    const use = document.createElement("div");
+    use.className = "lib-use";
+    if (item.kind === "image") {
+      use.append(
+        libButton("персонаж", async () => {
+          const entry = await loadImage(await fetchAsFile(item.url, "sheet.png"));
+          setSheet(entry, "Лист взят из библиотеки.");
+          openStep(2);
+        }),
+        libButton("фон", async () => {
+          const im = await loadImage(await fetchAsFile(item.url, "background.png"));
+          state.bg = { kind: "image", url: im.url, el: im.img };
+          $("#bg-info").textContent = "Фон взят из библиотеки.";
+          addThumb("#thumbs-bg", im.url, "фон", () => previewComposite("Фон."));
+          markDone(3);
+          previewComposite("Фон из библиотеки.");
+          refresh();
+        }),
+      );
+    } else {
+      use.append(libButton("как замену", async () => {
+        await useSwapResult(await fetchAsFile(item.url, "swap.mp4"));
+      }));
+    }
+    card.append(use);
+    media.onclick = () => window.open(item.url, "_blank", "noopener");
+  }
+  return card;
+}
+
+function libButton(label, fn) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const was = b.textContent;
+    b.textContent = "…";
+    try { await fn(); } catch (err) { $("#lib-info").textContent = err.message; }
+    b.textContent = was;
+    b.disabled = false;
+  };
+  return b;
 }
 
 // --- доступность кнопок ------------------------------------------------------
@@ -474,6 +607,9 @@ function wire() {
     }
   };
   $("#assemble").onclick = assemble;
+
+  $("#lib-refresh").onclick = loadLibrary;
+  loadLibrary();
 
   $("#recheck").onclick = async () => {
     const btn = $("#recheck");

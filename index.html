@@ -57,6 +57,7 @@
           <button id="use-as-sheet" disabled>Фото уже чистовое</button>
         </div>
         <p class="hint" id="sheet-info">Листа пока нет.</p>
+        <div class="thumbs" id="thumbs-char"></div>
       </div>
     </li>
 
@@ -73,6 +74,7 @@
         <input type="file" id="bg-file" accept="image/*,video/*" hidden>
         <textarea id="bg-prompt" rows="2" placeholder="Описание фона: пустая студия подкаста, мягкий тёплый свет слева" hidden></textarea>
         <p class="hint" id="bg-info">Фон не выбран.</p>
+        <div class="thumbs" id="thumbs-bg"></div>
       </div>
     </li>
 
@@ -91,6 +93,7 @@
         </div>
         <button id="run-swap" class="primary" disabled>Заменить персонажа</button>
         <p class="hint" id="swap-info">Нужны исходник и чистовой лист.</p>
+        <div class="thumbs" id="thumbs-swap"></div>
         <div class="row" id="swap-import-row">
           <button id="pick-swap" class="ghost">Загрузить готовый результат замены</button>
           <input type="file" id="swap-file" accept="video/*" hidden>
@@ -128,13 +131,23 @@
 
   </ol>
 
-  <!-- ─── правая колонка: превью ─── -->
+  <!-- ─── правая колонка: превью и библиотека ─── -->
   <aside id="preview">
     <div class="frame">
       <canvas id="out" width="1280" height="720"></canvas>
       <div id="empty">Здесь появится кадр</div>
     </div>
     <p class="hint" id="preview-info">Превью обновляется по ходу шагов.</p>
+
+    <section id="library">
+      <h3>
+        Библиотека
+        <button id="lib-refresh" title="Обновить список">Обновить</button>
+      </h3>
+      <p class="hint" id="lib-info">Всё, что сгенерировано на аккаунте. Ничего не
+      теряется при перезагрузке страницы.</p>
+      <div id="lib-items"></div>
+    </section>
   </aside>
 
 </main>

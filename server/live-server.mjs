@@ -192,6 +192,23 @@ function resultUrl(out) {
   return out.match(/https?:\/\/\S+\.(?:png|jpg|jpeg|webp|mp4|webm)/i)?.[0] ?? null;
 }
 
+/**
+ * Ставит задание в очередь и сразу возвращает его id. Ждать окончания в том же
+ * запросе нельзя: генерация идёт минутами, а иногда и дольше, и браузер всё это
+ * время держал бы соединение открытым, теряя результат при любой перезагрузке.
+ */
+async function startJob(args) {
+  const r = await runCli(["--json", ...args], { timeout: 300_000 });
+  if (r.code !== 0) return { error: cliError(r) };
+  try {
+    const parsed = JSON.parse(r.out);
+    const id = Array.isArray(parsed) ? parsed[0] : parsed?.id ?? parsed?.results?.[0]?.id;
+    if (id) return { jobId: id };
+  } catch { /* разберём ниже */ }
+  const id = r.out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+  return id ? { jobId: id } : { error: "CLI не вернул идентификатор задания" };
+}
+
 async function withTempFiles(files, fn) {
   const dir = await mkdtemp(join(tmpdir(), "hf-"));
   try {
@@ -243,6 +260,45 @@ async function handleHiggsfield(req, res, path) {
     return json(res, 200, { genState });
   }
 
+  // Библиотека: всё, что когда-либо сгенерировано на аккаунте. Нужна потому,
+  // что результат живёт на стороне Higgsfield, а вкладку легко закрыть.
+  if (path === "/api/hf/library" && req.method === "GET") {
+    const r = await runCli(["--json", "generate", "list"], { timeout: 90_000 });
+    if (r.code !== 0) return json(res, 502, { error: cliError(r) });
+    try {
+      const raw = JSON.parse(r.out);
+      const arr = Array.isArray(raw) ? raw : raw.items ?? raw.results ?? [];
+      const items = arr.map((x) => ({
+        id: x.id,
+        model: x.display_name ?? x.job_type,
+        kind: /video|motion|kling|veo|seedance|wan/i.test(x.job_type ?? "") ? "video" : "image",
+        status: x.status,
+        url: x.result_url ?? x.min_result_url ?? null,
+        createdAt: x.created_at,
+      }));
+      return json(res, 200, { items });
+    } catch {
+      return json(res, 502, { error: "не удалось разобрать список генераций" });
+    }
+  }
+
+  if (path === "/api/hf/job" && req.method === "GET") {
+    const id = new URL(req.url, "http://localhost").searchParams.get("id");
+    if (!id) return json(res, 400, { error: "нет id задания" });
+    const r = await runCli(["--json", "generate", "get", id], { timeout: 60_000 });
+    if (r.code !== 0) return json(res, 502, { error: cliError(r) });
+    try {
+      const j = JSON.parse(r.out);
+      if (j.status === "completed" && (j.result_url || j.min_result_url)) setGenState("ok");
+      return json(res, 200, {
+        status: j.status,
+        url: j.result_url ?? j.min_result_url ?? null,
+      });
+    } catch {
+      return json(res, 502, { error: "не удалось разобрать ответ CLI" });
+    }
+  }
+
   if (path === "/api/hf/status" && req.method === "GET") {
     const version = await runCli(["--version"], { timeout: 30_000 });
     const configured = !!(HF_ID && HF_SECRET);
@@ -285,32 +341,30 @@ async function handleHiggsfield(req, res, path) {
   if (path === "/api/hf/sheet") {
     if (!body.image) return json(res, 400, { error: "нет изображения" });
     return withTempFiles({ ref: { base64: body.image, ext: "png" } }, async (p) => {
-      const r = await runCli([
+      const started = await startJob([
         "generate", "create", "nano_banana_pro",
         "--prompt", body.prompt || SHEET_PROMPT,
         "--aspect-ratio", body.aspect || "9:16",
         "--resolution", "2k",
         "--image", p.ref,
-        "--wait", "--wait-timeout", "5m", "--json",
       ]);
-      const url = r.code === 0 ? resultUrl(r.out) : null;
-      if (url) await setGenState("ok");
-      return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+      return started.jobId
+        ? json(res, 200, { jobId: started.jobId })
+        : json(res, 502, { error: started.error });
     });
   }
 
   if (path === "/api/hf/background") {
     if (!body.prompt) return json(res, 400, { error: "нет описания фона" });
-    const r = await runCli([
+    const started = await startJob([
       "generate", "create", "nano_banana_pro",
       "--prompt", `${body.prompt}. Empty scene, no people, no text.`,
       "--aspect-ratio", body.aspect || "9:16",
       "--resolution", "2k",
-      "--wait", "--wait-timeout", "5m", "--json",
     ]);
-    const url = r.code === 0 ? resultUrl(r.out) : null;
-    if (url) await setGenState("ok");
-    return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+    return started.jobId
+      ? json(res, 200, { jobId: started.jobId })
+      : json(res, 502, { error: started.error });
   }
 
   if (path === "/api/hf/swap") {
@@ -318,15 +372,15 @@ async function handleHiggsfield(req, res, path) {
     return withTempFiles(
       { sheet: { base64: body.image, ext: "png" }, src: { base64: body.video, ext: "mp4" } },
       async (p) => {
-        const r = await runCli([
+        const started = await startJob([
           "generate", "workflow", "kling3_0_motion_control",
           "--image-references", p.sheet,
           "--video-references", p.src,
           "--mode", body.resolution === "1080p" ? "pro" : "std",
-          "--wait", "--wait-timeout", "15m", "--json",
-        ], { timeout: 900_000 });
-        const url = r.code === 0 ? resultUrl(r.out) : null;
-        return url ? json(res, 200, { url }) : json(res, 502, { error: cliError(r) });
+        ]);
+        return started.jobId
+          ? json(res, 200, { jobId: started.jobId })
+          : json(res, 502, { error: started.error });
       },
     );
   }

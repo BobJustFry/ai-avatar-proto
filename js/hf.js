@@ -59,12 +59,11 @@ export async function hfRecheck() {
   return post("/recheck", {});
 }
 
-/** Чистовой лист персонажа из произвольного фото. */
+/** Ставит задание в очередь; возвращает его id, не дожидаясь результата. */
 export async function makeSheet(file, { prompt, aspect = "9:16" } = {}) {
   return post("/sheet", { image: await toBase64(file), name: file.name, prompt, aspect });
 }
 
-/** Замена: персонаж с листа повторяет движение из видео. */
 export async function runSwap(sheetFile, videoFile, { resolution = "720p" } = {}) {
   return post("/swap", {
     image: await toBase64(sheetFile),
@@ -73,7 +72,37 @@ export async function runSwap(sheetFile, videoFile, { resolution = "720p" } = {}
   });
 }
 
-/** Фон по описанию. */
 export async function makeBackground(prompt, { aspect = "9:16" } = {}) {
   return post("/background", { prompt, aspect });
+}
+
+/**
+ * Ждёт задание опросом. Вебхука здесь нет и быть не может: приложение живёт на
+ * localhost, снаружи его не видно. Зато задание не теряется при перезагрузке —
+ * его всегда можно найти в библиотеке по id.
+ */
+export async function waitForJob(jobId, { onTick, intervalMs = 5000, timeoutMs = 20 * 60_000 } = {}) {
+  const started = Date.now();
+  for (;;) {
+    const res = await fetch(`${API}/job?id=${encodeURIComponent(jobId)}`);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || `статус задания: ${res.status}`);
+    if (d.status === "completed" && d.url) return d.url;
+    if (d.status === "failed" || d.status === "canceled") {
+      throw new Error(`задание завершилось со статусом «${d.status}»`);
+    }
+    if (Date.now() - started > timeoutMs) {
+      throw new Error("задание считается слишком долго — найдите его в библиотеке позже");
+    }
+    onTick?.(Math.round((Date.now() - started) / 1000), d.status);
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+/** Всё, что сгенерировано на аккаунте. */
+export async function hfLibrary() {
+  const res = await fetch(`${API}/library`);
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || `библиотека: ${res.status}`);
+  return d.items ?? [];
 }
